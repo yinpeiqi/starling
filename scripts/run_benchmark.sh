@@ -11,7 +11,7 @@ MEM_INDEX_PATH="${INDEX_PREFIX_PATH}MEM_R_${MEM_R}_L_${MEM_BUILD_L}_ALPHA_${MEM_
 GP_PATH="${INDEX_PREFIX_PATH}GP_TIMES_${GP_TIMES}_LOCK_${GP_LOCK_NUMS}_GP_USE_FREQ${GP_USE_FREQ}_CUT${GP_CUT}/"
 FREQ_PATH="${INDEX_PREFIX_PATH}FREQ/NQ_${FREQ_QUERY_CNT}_BM_${FREQ_BM}_L_${FREQ_L}_T_${FREQ_T}/"
 
-SUMMARY_FILE_PATH="../indices/summary.log"
+SUMMARY_FILE_PATH="/data/starling/${INDEX_PREFIX_PATH}/summary.log"
 
 print_usage_and_exit() {
   echo "Usage: ./run_benchmark.sh [debug/release] [build/build_mem/freq/gp/search] [knn/range]"
@@ -30,12 +30,12 @@ check_dir_and_make_if_absent() {
 
 case $1 in
   debug)
-    cmake -DCMAKE_BUILD_TYPE=Debug .. -B ../debug
-    EXE_PATH=../debug
+    cmake -DCMAKE_BUILD_TYPE=Debug .. -B /data/starling/debug
+    EXE_PATH=/data/starling/debug
   ;;
   release)
-    cmake -DCMAKE_BUILD_TYPE=Release .. -B ../release
-    EXE_PATH=../release
+    cmake -DCMAKE_BUILD_TYPE=Release .. -B /data/starling/release
+    EXE_PATH=/data/starling/release
   ;;
   *)
     print_usage_and_exit
@@ -45,7 +45,7 @@ pushd $EXE_PATH
 make -j
 popd
 
-mkdir -p ../indices && cd ../indices
+mkdir -p /data/starling && cd /data/starling
 
 date
 case $2 in
@@ -186,7 +186,7 @@ case $2 in
         do
           for T in ${T_LIST[@]}
           do
-            SEARCH_LOG=${INDEX_PREFIX_PATH}search/search_SQ${USE_SQ}_K${K}_CACHE${CACHE}_BW${BW}_T${T}_MEML${MEM_L}_MEMK${MEM_TOPK}_MEM_USE_FREQ${MEM_USE_FREQ}_PS${USE_PAGE_SEARCH}_USE_RATIO${PS_USE_RATIO}_GP_USE_FREQ{$GP_USE_FREQ}_GP_LOCK_NUMS${GP_LOCK_NUMS}_GP_CUT${GP_CUT}.log
+            SEARCH_LOG=${INDEX_PREFIX_PATH}search/search_SQ${USE_SQ}_K${K}_CACHE${CACHE}_BW${BW}_T${T}_MEML${MEM_L}_MEMK${MEM_TOPK}_MEM_USE_FREQ${MEM_USE_FREQ}_PS${USE_PAGE_SEARCH}_USE_RATIO${PS_USE_RATIO}_GP_USE_FREQ${GP_USE_FREQ}_GP_LOCK_NUMS${GP_LOCK_NUMS}_GP_CUT${GP_CUT}.log
             echo "Searching... log file: ${SEARCH_LOG}"
             sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; ${EXE_PATH}/tests/search_disk_index --data_type $DATA_TYPE \
               --dist_fn $DIST_FN \

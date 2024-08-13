@@ -29,7 +29,7 @@
 
 // WORKS FOR UPTO 2 BILLION POINTS (as we use INT INSTEAD OF UNSIGNED)
 
-#define PARTSIZE 10000000
+#define PARTSIZE 100000000
 #define ALIGNMENT 512
 
 namespace po = boost::program_options;

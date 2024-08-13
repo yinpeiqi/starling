@@ -194,15 +194,30 @@ int search_disk_index(
   diskann::cout.precision(2);
 
   std::string recall_string = "Recall@" + std::to_string(recall_at);
-  diskann::cout << std::setw(6) << "L" << std::setw(12) << "Beamwidth"
-                << std::setw(16) << "QPS" << std::setw(16) << "Mean Latency"
-                << std::setw(16) << "99.9 Latency" << std::setw(16)
-                << "Mean IOs" << std::setw(16) << "CPU (s)"
-                << std::setw(20) << "B4 Load In-Mem"
-                << std::setw(20) << "After Load Cache"
-                << std::setw(15) << "Peak Mem(MB)";
+  diskann::cout << std::setw(4) << "L" << std::setw(6) << "BeamW"
+                << std::setw(8) << "QPS" << std::setw(10) << "Mean Ltc"
+                << std::setw(10) << "99.9 Ltc" << std::setw(9)
+                << "Mean IOs" << std::setw(9) << "Mean Cmp"
+                << std::setw(9) << "PQ Cmp"
+                << std::setw(9) << "Pre(T)"
+                << std::setw(9) << "Cmp(T)"
+                << std::setw(9) << "Disp(T)"
+                << std::setw(9) << "Read(T)"
+                << std::setw(9) << "Page(T)"
+                // << std::setw(8) << "Cal"
+                // << std::setw(8) << "Sort"
+                // << std::setw(8) << "Nbrs"
+                << std::setw(9) << "visit(T)"
+                << std::setw(9) << "in-vis"
+                << std::setw(9) << "ck-vis"
+                << std::setw(9) << "Cache(T)"
+                << std::setw(9) << "DiskN(T)"
+                << std::setw(9) << "Post(T)";
+                // << std::setw(16) << "B4 Load In-Mem"
+                // << std::setw(16) << "After Load Cache"
+                // << std::setw(15) << "Peak Mem(MB)";
   if (calc_recall_flag) {
-    diskann::cout << std::setw(16) << recall_string << std::endl;
+    diskann::cout << std::setw(10) << recall_string << std::endl;
   } else
     diskann::cout << std::endl;
   diskann::cout
@@ -296,9 +311,73 @@ int search_disk_index(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.n_ios; });
 
-    auto mean_cpus = diskann::get_mean_stats<float>(
+    auto mean_ext_cmps = diskann::get_mean_stats<float>(
         stats, query_num,
-        [](const diskann::QueryStats& stats) { return stats.cpu_us; });
+        [](const diskann::QueryStats& stats) { return stats.n_ext_cmps; });
+
+    auto mean_cmps = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.n_cmps; });
+
+    auto mean_preprocess = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.preprocess_us; });
+
+    auto mean_postprocess = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.postprocess_us; });
+
+    auto mean_cmp_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.cmp_us; });
+
+    auto mean_dispatch_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.dispatch_us; });
+
+    auto mean_read_disk_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.read_disk_us; });
+
+    auto mean_page_proc_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.page_proc_us; });
+
+    auto mean_cache_proc_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.cache_proc_us; });
+
+    auto mean_disk_proc_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.disk_proc_us; });
+
+    auto mean_page_ext_cal_node = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.page_cal_node_us; });
+
+    auto mean_page_sort_dist = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.page_sort_us; });
+
+    auto mean_page_upt_nbrs = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.page_ins_nb_us; });
+
+    auto mean_insert_visited_time = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.insert_visited_us; });
+
+    auto mean_insert_visited_num = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.insert_visited; });
+
+    auto mean_check_visited = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.check_visited; });
+
+    auto mean_num_check_insert = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.insert_visited_us; });
 
     float recall = 0;
     if (calc_recall_flag) {
@@ -307,15 +386,33 @@ int search_disk_index(
                                          recall_at, recall_at);
     }
 
-    diskann::cout << std::setw(6) << L << std::setw(12) << optimized_beamwidth
-                  << std::setw(16) << qps << std::setw(16) << mean_latency
-                  << std::setw(16) << latency_999 << std::setw(16) << mean_ios
-                  << std::setw(16) << mean_cpus
-                  << std::setw(20) << load_mem
-                  << std::setw(20) << cache_mem
-                  << std::setw(15) << getProcessPeakRSS();
+    diskann::cout << std::setw(4) << L
+                  << std::setw(6) << optimized_beamwidth
+                  << std::setw(8) << qps
+                  << std::setw(10) << mean_latency
+                  << std::setw(10) << latency_999
+                  << std::setw(9) << mean_ios
+                  << std::setw(9) << mean_ext_cmps
+                  << std::setw(9) << mean_cmps
+                  << std::setw(9) << mean_preprocess
+                  << std::setw(9) << mean_cmp_time
+                  << std::setw(9) << mean_dispatch_time
+                  << std::setw(9) << mean_read_disk_time
+                  << std::setw(9) << mean_page_proc_time
+                  // << std::setw(8) << mean_page_ext_cal_node
+                  // << std::setw(8) << mean_page_sort_dist
+                  // << std::setw(8) << mean_page_upt_nbrs
+                  << std::setw(9) << mean_insert_visited_time
+                  << std::setw(9) << mean_insert_visited_num
+                  << std::setw(9) << mean_check_visited
+                  << std::setw(9) << mean_cache_proc_time
+                  << std::setw(9) << mean_disk_proc_time
+                  << std::setw(9) << mean_postprocess;
+                  // << std::setw(16) << load_mem
+                  // << std::setw(16) << cache_mem
+                  // << std::setw(15) << getProcessPeakRSS()
     if (calc_recall_flag) {
-      diskann::cout << std::setw(16) << recall << std::endl;
+      diskann::cout << std::setw(10) << recall << std::endl;
     } else
       diskann::cout << std::endl;
     delete[] stats;

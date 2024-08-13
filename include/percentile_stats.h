@@ -22,14 +22,31 @@ namespace diskann {
     float total_us = 0;  // total time to process query in micros
     float io_us = 0;     // total time spent in IO
     float cpu_us = 0;    // total time spent in CPU
+    float preprocess_us = 0;    // total time spent for pre process (in-mem nev)
+    float postprocess_us = 0;    // total time spent for post process (sort and lim-k)
+    float cmp_us = 0;    // total time spent for cmp (ext and pq)
+
+    float dispatch_us = 0;    // total time spent for dispatch nodes
+    float read_disk_us = 0;    // total time spent for read disk process
+    float cache_proc_us = 0;    // total time spent for cache node process
+    float disk_proc_us = 0;    // total time spent for disk node process
+    float page_proc_us = 0;    // total time spent for page process in PageSearch
+
+    unsigned insert_visited = 0;  // total number of insertion happen
+    unsigned check_visited = 0;  // total number of check visited happen
+    float page_cal_node_us = 0;
+    float page_sort_us = 0;
+    float page_ins_nb_us = 0;
+    float insert_visited_us = 0;
 
     unsigned n_4k = 0;          // # of 4kB reads
     unsigned n_8k = 0;          // # of 8kB reads
     unsigned n_12k = 0;         // # of 12kB reads
     unsigned n_ios = 0;         // total # of IOs issued
     unsigned read_size = 0;     // total # of bytes read
-    unsigned n_cmps_saved = 0;  // # cmps saved
+    unsigned n_cmps_saved = 0;  // # cmps saved (seems deperated)
     unsigned n_cmps = 0;        // # cmps
+    unsigned n_ext_cmps = 0;    // # exact cmps
     unsigned n_cache_hits = 0;  // # cache_hits
     unsigned n_hops = 0;        // # search hops
   };

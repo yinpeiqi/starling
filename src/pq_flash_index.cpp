@@ -943,15 +943,15 @@ namespace diskann {
     _u8 *  pq_coord_scratch = query_scratch->aligned_pq_coord_scratch;
 
     // lambda to batch compute query<-> node distances in PQ space
-    auto compute_dists = [this, pq_coord_scratch, pq_dists](const unsigned *ids,
-                                                            const _u64 n_ids,
+    auto compute_dists = [this, pq_coord_scratch, pq_dists](const unsigned *ids,  // ids
+                                                            const _u64 n_ids, // number ids
                                                             float *dists_out) {
       pq_flash_index_utils::aggregate_coords(ids, n_ids, this->data, this->n_chunks,
-                         pq_coord_scratch);
+                         pq_coord_scratch); // just memcpy to scratch
       pq_flash_index_utils::pq_dist_lookup(pq_coord_scratch, n_ids, this->n_chunks, pq_dists,
                        dists_out);
     };
-    Timer                 query_timer, io_timer, cpu_timer;
+    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer;  // temp timer
     std::vector<Neighbor> retset(l_search + 1);
     tsl::robin_set<_u64> &visited = *(query_scratch->visited);
 
@@ -979,6 +979,7 @@ namespace diskann {
       }
     };
 
+    tmp_timer.reset();
     if (mem_L) {
       std::vector<unsigned> mem_tags(mem_L);
       std::vector<T*> res = std::vector<T*>();
@@ -990,6 +991,9 @@ namespace diskann {
 
     std::sort(retset.begin(), retset.begin() + cur_list_size);
 
+    if (stats != nullptr) {
+      stats->preprocess_us += (double) tmp_timer.elapsed();
+    }
     unsigned cmps = 0;
     unsigned hops = 0;
     unsigned num_ios = 0;
@@ -1017,6 +1021,8 @@ namespace diskann {
       // find new beam
       _u32 marker = k;
       _u32 num_seen = 0;
+
+      part_timer.reset();
       while (marker < cur_list_size && frontier.size() < beam_width &&
              num_seen < beam_width) {
         if (retset[marker].flag) {
@@ -1049,8 +1055,10 @@ namespace diskann {
         }
         marker++;
       }
+      if (stats != nullptr) stats->dispatch_us += (double) part_timer.elapsed();
 
       // read nhoods of frontier ids
+      part_timer.reset();
       if (!frontier.empty()) {
         if (stats != nullptr)
           stats->n_hops++;
@@ -1080,12 +1088,18 @@ namespace diskann {
           stats->io_us += (double) io_timer.elapsed();
         }
       }
+      if (stats != nullptr) stats->read_disk_us += (double) part_timer.elapsed();
 
-      // process cached nhoods
+      // process cached nhoods (finded in cache for each iteration)
+      // for each cached_nhood:
+      // it stores (node id, (num neighbors, *neighbors))
+      part_timer.reset();
       for (auto &cached_nhood : cached_nhoods) {
         auto  global_cache_iter = coord_cache.find(cached_nhood.first);
         T *   node_fp_coords_copy = global_cache_iter->second;
         float cur_expanded_dist;
+
+        tmp_timer.reset();
         if (!use_disk_index_pq) {
           cur_expanded_dist = dist_cmp->compare(query, node_fp_coords_copy,
                                                 (unsigned) aligned_dim);
@@ -1097,6 +1111,8 @@ namespace diskann {
             cur_expanded_dist = disk_pq_table.l2_distance(
                 query_float, (_u8 *) node_fp_coords_copy);
         }
+        if (stats != nullptr) stats->cmp_us += (double) tmp_timer.elapsed();
+
         full_retset.push_back(
             Neighbor((unsigned) cached_nhood.first, cur_expanded_dist, true));
 
@@ -1107,17 +1123,27 @@ namespace diskann {
         cpu_timer.reset();
         compute_dists(node_nbrs, nnbrs, dist_scratch);
         if (stats != nullptr) {
+          stats->n_ext_cmps++;
           stats->n_cmps += (double) nnbrs;
           stats->cpu_us += (double) cpu_timer.elapsed();
+          stats->cmp_us += (double) cpu_timer.elapsed();
         }
 
         // process prefetched nhood
         for (_u64 m = 0; m < nnbrs; ++m) {
           unsigned id = node_nbrs[m];
+          tmp_timer.reset();
+          stats->check_visited += 1;
           if (visited.find(id) != visited.end()) {
+            stats->insert_visited_us += (double) tmp_timer.elapsed();
             continue;
-          } else {
+          }
+          else {
             visited.insert(id);
+            if (stats != nullptr) {
+              stats->insert_visited += 1;
+              stats->insert_visited_us += (double) tmp_timer.elapsed();
+            }
             cmps++;
             float dist = dist_scratch[m];
             if (dist >= retset[cur_list_size - 1].distance &&
@@ -1135,6 +1161,9 @@ namespace diskann {
           }
         }
       }
+      if (stats != nullptr) stats->cache_proc_us += (double) part_timer.elapsed();
+
+      part_timer.reset();
 #ifdef USE_BING_INFRA
       // process each frontier nhood - compute distances to unvisited nodes
       int completedIndex = -1;
@@ -1162,6 +1191,8 @@ namespace diskann {
 
         T *node_fp_coords_copy = data_buf + (data_buf_idx * aligned_dim);
         data_buf_idx++;
+
+        tmp_timer.reset();
         memcpy(node_fp_coords_copy, node_fp_coords, disk_bytes_per_point);
         float cur_expanded_dist;
         if (!use_disk_index_pq) {
@@ -1175,6 +1206,8 @@ namespace diskann {
             cur_expanded_dist = disk_pq_table.l2_distance(
                 query_float, (_u8 *) node_fp_coords_copy);
         }
+        if (stats != nullptr) stats->cmp_us += (double) tmp_timer.elapsed();
+
         full_retset.push_back(
             Neighbor(frontier_nhood.first, cur_expanded_dist, true));
         unsigned *node_nbrs = (node_buf + 1);
@@ -1182,18 +1215,28 @@ namespace diskann {
         cpu_timer.reset();
         compute_dists(node_nbrs, nnbrs, dist_scratch);
         if (stats != nullptr) {
+          stats->n_ext_cmps++;
           stats->n_cmps += (double) nnbrs;
           stats->cpu_us += (double) cpu_timer.elapsed();
+          stats->cmp_us += (double) cpu_timer.elapsed();
         }
 
         cpu_timer.reset();
         // process prefetch-ed nhood
         for (_u64 m = 0; m < nnbrs; ++m) {
           unsigned id = node_nbrs[m];
+          tmp_timer.reset();
+          stats->check_visited += 1;
           if (visited.find(id) != visited.end()) {
+            stats->insert_visited_us += (double) tmp_timer.elapsed();
             continue;
-          } else {
+          }
+          else {
             visited.insert(id);
+            if (stats != nullptr) {
+              stats->insert_visited += 1;
+              stats->insert_visited_us += (double) tmp_timer.elapsed();
+            }
             cmps++;
             float dist = dist_scratch[m];
             if (stats != nullptr) {
@@ -1213,11 +1256,11 @@ namespace diskann {
                        // updated due to neighbors of n.
           }
         }
-
         if (stats != nullptr) {
           stats->cpu_us += (double) cpu_timer.elapsed();
         }
       }
+      if (stats != nullptr) stats->disk_proc_us += (double) part_timer.elapsed();
 
       // update best inserted position
       if (nk <= k)
@@ -1228,6 +1271,7 @@ namespace diskann {
       hops++;
     }
 
+    tmp_timer.reset();
     // re-sort by distance
     std::sort(full_retset.begin(), full_retset.end(),
               [](const Neighbor &left, const Neighbor &right) {
@@ -1307,6 +1351,7 @@ namespace diskann {
 
     if (stats != nullptr) {
       stats->total_us = (double) query_timer.elapsed();
+      stats->postprocess_us = (double) tmp_timer.elapsed();
     }
   }
 
