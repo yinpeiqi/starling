@@ -14,6 +14,8 @@ add_executable(float_bin_to_int8 float_bin_to_int8.cpp)
 
 add_executable(ivecs_to_bin ivecs_to_bin.cpp)
 
+add_executable(print_freq print_freq.cpp)
+
 add_executable(bvecs_to_bin bvecs_to_bin.cpp)
 
 add_executable(merge_gt merge_gt.cpp)

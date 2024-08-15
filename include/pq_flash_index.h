@@ -183,6 +183,8 @@ namespace diskann {
 
     std::shared_ptr<AlignedFileReader> &reader;
 
+    DISKANN_DLLEXPORT unsigned get_nnodes_per_sector() { return nnodes_per_sector; }
+
    protected:
     DISKANN_DLLEXPORT void use_medoids_data_as_centroids();
     DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads);

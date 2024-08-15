@@ -194,10 +194,14 @@ int search_disk_index(
   diskann::cout.precision(2);
 
   std::string recall_string = "Recall@" + std::to_string(recall_at);
-  diskann::cout << std::setw(4) << "L" << std::setw(6) << "BeamW"
-                << std::setw(8) << "QPS" << std::setw(10) << "Mean Ltc"
-                << std::setw(10) << "99.9 Ltc" << std::setw(9)
-                << "Mean IOs" << std::setw(9) << "Mean Cmp"
+  diskann::cout << std::setw(4) << "L"
+                << std::setw(6) << "BeamW"
+                << std::setw(8) << "QPS"
+                << std::setw(10) << "Mean Ltc"
+                << std::setw(10) << "99.9 Ltc" 
+                << std::setw(9) << "Mean IOs"
+                << std::setw(9) << "Mean Cmp"
+                << std::setw(9) << "IO waste"
                 << std::setw(9) << "PQ Cmp"
                 << std::setw(9) << "Pre(T)"
                 << std::setw(9) << "Cmp(T)"
@@ -315,6 +319,8 @@ int search_disk_index(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.n_ext_cmps; });
 
+    auto io_wastes = mean_ios * _pFlashIndex->get_nnodes_per_sector() - mean_ext_cmps;
+
     auto mean_cmps = diskann::get_mean_stats<float>(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.n_cmps; });
@@ -393,6 +399,7 @@ int search_disk_index(
                   << std::setw(10) << latency_999
                   << std::setw(9) << mean_ios
                   << std::setw(9) << mean_ext_cmps
+                  << std::setw(9) << io_wastes
                   << std::setw(9) << mean_cmps
                   << std::setw(9) << mean_preprocess
                   << std::setw(9) << mean_cmp_time
