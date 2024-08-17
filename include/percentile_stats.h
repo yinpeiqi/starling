@@ -34,6 +34,7 @@ namespace diskann {
 
     unsigned insert_visited = 0;  // total number of insertion happen
     unsigned check_visited = 0;  // total number of check visited happen
+    unsigned repeat_read = 0;
     float page_cal_node_us = 0;
     float page_sort_us = 0;
     float page_ins_nb_us = 0;

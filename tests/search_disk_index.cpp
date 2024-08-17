@@ -202,9 +202,9 @@ int search_disk_index(
                 << std::setw(9) << "Mean IOs"
                 << std::setw(9) << "Mean Cmp"
                 << std::setw(9) << "IO waste"
+                << std::setw(9) << "Rep LD"
                 << std::setw(9) << "PQ Cmp"
                 << std::setw(9) << "Pre(T)"
-                << std::setw(9) << "Cmp(T)"
                 << std::setw(9) << "Disp(T)"
                 << std::setw(9) << "Read(T)"
                 << std::setw(9) << "Page(T)"
@@ -325,6 +325,10 @@ int search_disk_index(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.n_cmps; });
 
+    auto mean_repeat_read = diskann::get_mean_stats<float>(
+        stats, query_num,
+        [](const diskann::QueryStats& stats) { return stats.repeat_read; });
+
     auto mean_preprocess = diskann::get_mean_stats<float>(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.preprocess_us; });
@@ -400,9 +404,9 @@ int search_disk_index(
                   << std::setw(9) << mean_ios
                   << std::setw(9) << mean_ext_cmps
                   << std::setw(9) << io_wastes
+                  << std::setw(9) << mean_repeat_read
                   << std::setw(9) << mean_cmps
                   << std::setw(9) << mean_preprocess
-                  << std::setw(9) << mean_cmp_time
                   << std::setw(9) << mean_dispatch_time
                   << std::setw(9) << mean_read_disk_time
                   << std::setw(9) << mean_page_proc_time

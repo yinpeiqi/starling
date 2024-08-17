@@ -122,8 +122,9 @@ case $2 in
               --use_page_search 0 \
               --disk_file_path ${DISK_FILE_PATH} > ${FREQ_LOG}
   ;;
-  gp)
-    check_dir_and_make_if_absent ${GP_PATH}
+  dgp)
+    # DiskANN graph partition
+    DGP_PATH="${INDEX_PREFIX_PATH}_DISKANN/"
     OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk_beam_search.index
     if [ ! -f "$OLD_INDEX_FILE" ]; then
       OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk.index
@@ -134,57 +135,74 @@ case $2 in
       OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk.index
       GP_DATA_TYPE=uint8
     fi
-    GP_FILE_PATH=${GP_PATH}_part.bin
-    echo "Running graph partition... ${GP_FILE_PATH}.log"
-    if [ ${GP_USE_FREQ} -eq 1 ]; then
-      time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
-        --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --freq_file ${FREQ_PATH}_freq.bin --lock_nums ${GP_LOCK_NUMS} --cut ${GP_CUT} > ${GP_FILE_PATH}.log
+    if [ -d ${DGP_PATH} ]; then
+      echo "Directory ${DGP_PATH} is already exit."
+      GP_FILE_PATH=${DGP_PATH}_part.bin
+      if [ -f "${GP_FILE_PATH}" ]; then
+        cp ${OLD_INDEX_FILE} ${INDEX_PREFIX_PATH}_disk.index
+        cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
+        exit 0
+      else
+        echo "${GP_FILE_PATH} not found."
+        exit 1
+      fi
     else
+      mkdir -p ${DGP_PATH}
+      GP_FILE_PATH=${DGP_PATH}_part.bin
+      echo "Running graph partition... ${GP_FILE_PATH}.log"
       time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
-        --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES > ${GP_FILE_PATH}.log
-    fi
+        --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --diskann 1 > ${GP_FILE_PATH}.log
 
-    echo "Running relayout... ${GP_PATH}relayout.log"
-    time ${EXE_PATH}/tests/utils/index_relayout ${OLD_INDEX_FILE} ${GP_FILE_PATH} > ${GP_PATH}relayout.log
-    if [ ! -f "${INDEX_PREFIX_PATH}_disk_beam_search.index" ]; then
-      mv $OLD_INDEX_FILE ${INDEX_PREFIX_PATH}_disk_beam_search.index
+      cp ${OLD_INDEX_FILE} ${INDEX_PREFIX_PATH}_disk.index
+      cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
     fi
-    #TODO: Use only one index file
-    cp ${GP_PATH}_part_tmp.index ${INDEX_PREFIX_PATH}_disk.index
-    cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
   ;;
-  sgp)
+  gp)
     # graph partition with scaled
-    check_dir_and_make_if_absent ${GP_PATH}
-    OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk_beam_search.index
-    if [ ! -f "$OLD_INDEX_FILE" ]; then
-      OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk.index
-    fi
-    #using sq index file to gp
-    GP_DATA_TYPE=$DATA_TYPE
-    if [ $USE_SQ -eq 1 ]; then 
-      OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk.index
-      GP_DATA_TYPE=uint8
-    fi
-    GP_FILE_PATH=${GP_PATH}_part.bin
-    echo "Running graph partition... ${GP_FILE_PATH}.log"
-    if [ ${GP_USE_FREQ} -eq 1 ]; then
-      time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
-        --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --freq_file ${FREQ_PATH}_freq.bin --lock_nums ${GP_LOCK_NUMS} --cut ${GP_CUT} --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log
+    if [ -d ${GP_PATH} ]; then
+      echo "Directory ${GP_PATH} is already exit."
+      if [ -f "${GP_PATH}_part_tmp.index" ]; then
+        echo "copy ${GP_PATH}_part_tmp.index to ${INDEX_PREFIX_PATH}_disk.index."
+        GP_FILE_PATH=${GP_PATH}_part.bin
+        cp ${GP_PATH}_part_tmp.index ${INDEX_PREFIX_PATH}_disk.index
+        cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
+        exit 0
+      else
+        echo "${GP_PATH}_part_tmp.index not found."
+        exit 1
+      fi
     else
-      time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
-        --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log
-    fi
+      mkdir -p ${GP_PATH}
+      # check_dir_and_make_if_absent ${GP_PATH}
+      OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk_beam_search.index
+      if [ ! -f "$OLD_INDEX_FILE" ]; then
+        OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk.index
+      fi
+      #using sq index file to gp
+      GP_DATA_TYPE=$DATA_TYPE
+      if [ $USE_SQ -eq 1 ]; then 
+        OLD_INDEX_FILE=${INDEX_PREFIX_PATH}_disk.index
+        GP_DATA_TYPE=uint8
+      fi
+      GP_FILE_PATH=${GP_PATH}_part.bin
+      echo "Running graph partition... ${GP_FILE_PATH}.log"
+      if [ ${GP_USE_FREQ} -eq 1 ]; then
+        time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
+          --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --freq_file ${FREQ_PATH}_freq.bin --lock_nums ${GP_LOCK_NUMS} --cut ${GP_CUT} --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log
+      else
+        time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
+          --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log
+      fi
 
-    GP_FILE_PATH=${GP_PATH}_part.bin
-    echo "Running relayout... ${GP_PATH}relayout.log"
-    time ${EXE_PATH}/tests/utils/index_relayout ${OLD_INDEX_FILE} ${GP_FILE_PATH} > ${GP_PATH}relayout.log
-    if [ ! -f "${INDEX_PREFIX_PATH}_disk_beam_search.index" ]; then
-      mv $OLD_INDEX_FILE ${INDEX_PREFIX_PATH}_disk_beam_search.index
+      echo "Running relayout... ${GP_PATH}relayout.log"
+      time ${EXE_PATH}/tests/utils/index_relayout ${OLD_INDEX_FILE} ${GP_FILE_PATH} > ${GP_PATH}relayout.log
+      if [ ! -f "${INDEX_PREFIX_PATH}_disk_beam_search.index" ]; then
+        mv $OLD_INDEX_FILE ${INDEX_PREFIX_PATH}_disk_beam_search.index
+      fi
+      #TODO: Use only one index file
+      cp ${GP_PATH}_part_tmp.index ${INDEX_PREFIX_PATH}_disk.index
+      cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
     fi
-    #TODO: Use only one index file
-    cp ${GP_PATH}_part_tmp.index ${INDEX_PREFIX_PATH}_disk.index
-    cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
   ;;
   search)
     mkdir -p ${INDEX_PREFIX_PATH}/search
@@ -214,6 +232,35 @@ case $2 in
 
     log_arr=()
     case $3 in
+      gdbknn)
+        for BW in ${BM_LIST[@]}
+        do
+          for T in ${T_LIST[@]}
+          do
+            SEARCH_LOG=${INDEX_PREFIX_PATH}search/search_SQ${USE_SQ}_K${K}_CACHE${CACHE}_BW${BW}_T${T}_MEML${MEM_L}_MEMK${MEM_TOPK}_MEM_USE_FREQ${MEM_USE_FREQ}_PS${USE_PAGE_SEARCH}_USE_RATIO${PS_USE_RATIO}_GP_USE_FREQ${GP_USE_FREQ}_GP_LOCK_NUMS${GP_LOCK_NUMS}_GP_CUT${GP_CUT}.log
+            echo "Searching... log file: ${SEARCH_LOG}"
+            sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; 
+            gdb ${EXE_PATH}/tests/search_disk_index -ex "run --data_type $DATA_TYPE \
+              --dist_fn $DIST_FN \
+              --index_path_prefix $INDEX_PREFIX_PATH \
+              --query_file $QUERY_FILE \
+              --gt_file $GT_FILE \
+              -K $K \
+              --result_path ${INDEX_PREFIX_PATH}result/result \
+              --num_nodes_to_cache $CACHE \
+              -T $T \
+              -L ${LS} \
+              -W $BW \
+              --mem_L ${MEM_L} \
+              --mem_index_path ${MEM_INDEX_PATH}_index \
+              --use_page_search ${USE_PAGE_SEARCH} \
+              --use_ratio ${PS_USE_RATIO} \
+              --disk_file_path ${DISK_FILE_PATH} \
+              --use_sq ${USE_SQ}       > ${SEARCH_LOG}" 
+            log_arr+=( ${SEARCH_LOG} )
+          done
+        done
+      ;;
       knn)
         for BW in ${BM_LIST[@]}
         do

@@ -100,9 +100,11 @@ namespace diskann {
 
     Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer, subpart_timer;
     std::vector<Neighbor> retset(l_search + 1);
+    // std::vector<bool> visited(10000000, false);
+    // std::unordered_set<_u64> visited(10000);
     tsl::robin_set<_u64> &visited = *(query_scratch->visited);
     tsl::robin_set<unsigned> &page_visited = *(query_scratch->page_visited);
-    tsl::robin_map<_u64, unsigned> last_io_nbrs;  // map [nbrs] to [id in last page]
+    tsl::robin_map<_u64, bool> exact_visited;
     unsigned cur_list_size = 0;
 
     std::vector<Neighbor> full_retset;
@@ -229,17 +231,11 @@ namespace diskann {
     std::vector<std::pair<unsigned, std::pair<unsigned, unsigned *>>>
         cached_nhoods;
     cached_nhoods.reserve(2 * beam_width);
-    std::vector<std::pair<unsigned, unsigned>> last_io_nhoods;
-    last_io_nhoods.reserve(2 * beam_width);
 
     std::vector<unsigned> last_io_ids;
     last_io_ids.reserve(2 * beam_width);
-    std::vector<unsigned> last_io_pids;
-    last_io_pids.reserve(2 * beam_width);
     std::vector<char> last_pages(SECTOR_LEN * beam_width * 2);
     int n_ops = 0;
-
-    bool fetch_last_io_nbrs = true;
 
     while (k < cur_list_size && num_ios < io_limit) {
       unsigned nk = cur_list_size;
@@ -248,7 +244,6 @@ namespace diskann {
       frontier_nhoods.clear();
       frontier_read_reqs.clear();
       cached_nhoods.clear();
-      last_io_nhoods.clear();
       sector_scratch_idx = 0;
       // find new beam
       _u32 marker = k;
@@ -260,25 +255,26 @@ namespace diskann {
              num_seen < beam_width) {
         const unsigned pid = id2page_[retset[marker].id];
         if (retset[marker].flag) {
-        // if (page_visited.find(pid) == page_visited.end() && retset[marker].flag) {
-          num_seen++;
-          auto iter = nhood_cache.find(retset[marker].id);
-          if (iter != nhood_cache.end()) {
-            cached_nhoods.push_back(
-                std::make_pair(retset[marker].id, iter->second));
-            if (stats != nullptr) {
-              stats->n_cache_hits++;
-            }
-          } else {
-            bool in_last_io = false;
-            if (fetch_last_io_nbrs) {
-              if (last_io_nbrs.find(retset[marker].id) != last_io_nbrs.end()) {
-                in_last_io = true;
-                last_io_nhoods.push_back(std::make_pair(retset[marker].id, last_io_nbrs[retset[marker].id]));
+          if (exact_visited.find(retset[marker].id) == exact_visited.end()) {
+            num_seen++;
+            auto iter = nhood_cache.find(retset[marker].id);
+            if (iter != nhood_cache.end()) {
+              cached_nhoods.push_back(
+                  std::make_pair(retset[marker].id, iter->second));
+              if (stats != nullptr) {
+                stats->n_cache_hits++;
+              }
+            } else {
+              frontier.push_back(retset[marker].id);
+              for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
+                unsigned id = gp_layout_[pid][j];
+                if (exact_visited.find(id) == exact_visited.end())
+                  exact_visited.insert({id, false});
+                else if (stats != nullptr) {
+                  stats->repeat_read++;
+                }
               }
             }
-            if (!in_last_io) frontier.push_back(retset[marker].id);
-            // page_visited.insert(pid);
           }
           retset[marker].flag = false;
         }
@@ -288,7 +284,6 @@ namespace diskann {
 
       // read nhoods of frontier ids
       part_timer.reset();
-      unsigned n_frontier = frontier.size();
       if (!frontier.empty()) {
         if (stats != nullptr)
           stats->n_hops++;
@@ -321,27 +316,42 @@ namespace diskann {
 
       // compute remaining nodes in the pages that are fetched in the previous round
       part_timer.reset();
-      if (fetch_last_io_nbrs) {
-        for (size_t i = 0; i < last_io_nhoods.size(); i++) {
-            const unsigned id = last_io_nhoods[i].first;
-            const unsigned last_io_pos = last_io_nhoods[i].second;
-            const unsigned pid = last_io_pids[last_io_pos];
-            char    *sector_buf = last_pages.data() + last_io_pos * SECTOR_LEN;
-            const unsigned p_size = gp_layout_[pid].size();
+      for (size_t i = 0; i < last_io_ids.size(); ++i) {
+        const unsigned last_io_id = last_io_ids[i];
+        char    *sector_buf = last_pages.data() + i * SECTOR_LEN;
+        const unsigned pid = id2page_[last_io_id];
+        const unsigned p_size = gp_layout_[pid].size();
+        // minus one for the vector that is computed previously
+        unsigned vis_size = use_ratio * (p_size - 1);
+        std::vector<std::pair<float, const char*>> vis_cand;
+        vis_cand.reserve(p_size);
 
-            // compute exact distances of the vectors within the page
-            for (unsigned j = 0; j < p_size; ++j) {
-                const unsigned cur_id = gp_layout_[pid][j];
-                if (cur_id != id) continue;
-                const char* node_buf = sector_buf + j * max_node_len;
-                float dist = compute_exact_dists_and_push(node_buf, id);
-                compute_and_push_nbrs(node_buf, nk);
-            }
+        // compute exact distances of the vectors within the page
+        subpart_timer.reset();
+        for (unsigned j = 0; j < p_size; ++j) {
+          const unsigned id = gp_layout_[pid][j];
+          if (id == last_io_id || exact_visited[id]) continue;
+          const char* node_buf = sector_buf + j * max_node_len;
+          float dist = compute_exact_dists_and_push(node_buf, id);
+          vis_cand.emplace_back(dist, node_buf);
+          exact_visited[id] = true;
         }
-        last_io_ids.clear();
-        last_io_pids.clear();
-        last_io_nbrs.clear();
+        if (stats != nullptr) stats->page_cal_node_us += (double) subpart_timer.elapsed();
+        subpart_timer.reset();
+        if (vis_size && vis_size != p_size) {
+          std::sort(vis_cand.begin(), vis_cand.end());
+        }
+        if (stats != nullptr) stats->page_sort_us += (double) subpart_timer.elapsed();
+
+        // compute PQ distances for neighbours of the vectors in the page
+        subpart_timer.reset();
+        if (vis_size > vis_cand.size()) vis_size = vis_cand.size();
+        for (unsigned j = 0; j < vis_size; ++j) {
+          compute_and_push_nbrs(vis_cand[j].second, nk);
+        }
+        if (stats != nullptr) stats->page_ins_nb_us += (double) subpart_timer.elapsed();
       }
+      last_io_ids.clear();
       if (stats != nullptr) stats->page_proc_us += (double) part_timer.elapsed();
 
       // process cached nhoods
@@ -371,15 +381,11 @@ namespace diskann {
       // compute only the desired vectors in the pages - one for each page
       // postpone remaining vectors to the next round
       part_timer.reset();
-      for (int i = 0; i < frontier_nhoods.size(); i++) {
-        auto &frontier_nhood = frontier_nhoods[i];
+      for (auto &frontier_nhood : frontier_nhoods) {
         char *sector_buf = frontier_nhood.second;
         unsigned pid = id2page_[frontier_nhood.first];
-        if (fetch_last_io_nbrs) {
-            memcpy(last_pages.data() + last_io_ids.size() * SECTOR_LEN, sector_buf, SECTOR_LEN);
-            last_io_ids.emplace_back(frontier_nhood.first);
-            last_io_pids.emplace_back(pid);
-        }
+        memcpy(last_pages.data() + last_io_ids.size() * SECTOR_LEN, sector_buf, SECTOR_LEN);
+        last_io_ids.emplace_back(frontier_nhood.first);
 
         for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
           unsigned id = gp_layout_[pid][j];
@@ -387,12 +393,10 @@ namespace diskann {
             char *node_buf = sector_buf + j * max_node_len;
             compute_exact_dists_and_push(node_buf, id);
             compute_and_push_nbrs(node_buf, nk);
-          } else if (fetch_last_io_nbrs) {
-            last_io_nbrs.insert({id, i});
           }
         }
       }
-    if (stats != nullptr) stats->disk_proc_us += (double) part_timer.elapsed();
+      if (stats != nullptr) stats->disk_proc_us += (double) part_timer.elapsed();
 
       // update best inserted position
       if (nk <= k)
