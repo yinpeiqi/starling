@@ -103,4 +103,5 @@ class AlignedFileReader {
                     bool async = false) = 0;
   virtual int submit_reqs(std::vector<AlignedRead>& read_reqs, IOContext& ctx) = 0;
   virtual void get_events(IOContext &ctx, int n_ops) = 0;
+  virtual int get_events(IOContext& ctx, int min_r, int max_r, std::vector<char*>& ofts) = 0;
 };

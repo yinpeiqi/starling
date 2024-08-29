@@ -1226,22 +1226,23 @@ namespace diskann {
         for (_u64 m = 0; m < nnbrs; ++m) {
           unsigned id = node_nbrs[m];
           tmp_timer.reset();
-          stats->check_visited += 1;
+          if (stats != nullptr) {
+            stats->check_visited += 1;
+          }
           if (visited.find(id) != visited.end()) {
-            stats->insert_visited_us += (double) tmp_timer.elapsed();
+            // if (stats != nullptr) {
+            //   stats->insert_visited_us += (double) tmp_timer.elapsed();
+            // }
             continue;
           }
           else {
             visited.insert(id);
             if (stats != nullptr) {
               stats->insert_visited += 1;
-              stats->insert_visited_us += (double) tmp_timer.elapsed();
+              // stats->insert_visited_us += (double) tmp_timer.elapsed();
             }
             cmps++;
             float dist = dist_scratch[m];
-            // if (stats != nullptr) {
-            //   stats->n_cmps++;
-            // }
             if (dist >= retset[cur_list_size - 1].distance &&
                 (cur_list_size == l_search))
               continue;

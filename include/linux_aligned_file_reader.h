@@ -37,6 +37,7 @@ class LinuxAlignedFileReader : public AlignedFileReader {
 
   int submit_reqs(std::vector<AlignedRead> &read_reqs, IOContext &ctx);
   void get_events(IOContext &ctx, int n_ops);
+  int get_events(IOContext& ctx, int min_r, int max_r, std::vector<char*>& ofts);
 };
 
 #endif

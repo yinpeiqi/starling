@@ -11,7 +11,7 @@ MEM_INDEX_PATH="${INDEX_PREFIX_PATH}MEM_R_${MEM_R}_L_${MEM_BUILD_L}_ALPHA_${MEM_
 GP_PATH="${INDEX_PREFIX_PATH}GP_TIMES_${GP_TIMES}_LOCK_${GP_LOCK_NUMS}_GP_USE_FREQ${GP_USE_FREQ}_CUT${GP_CUT}_SCALE${GP_SCALE_F}/"
 FREQ_PATH="${INDEX_PREFIX_PATH}FREQ/NQ_${FREQ_QUERY_CNT}_BM_${FREQ_BM}_L_${FREQ_L}_T_${FREQ_T}/"
 
-SUMMARY_FILE_PATH="/data/starling/${INDEX_PREFIX_PATH}/summary.log"
+SUMMARY_FILE_PATH="${DATA_DIR}/starling/${INDEX_PREFIX_PATH}/summary.log"
 
 print_usage_and_exit() {
   echo "Usage: ./run_benchmark.sh [debug/release] [build/build_mem/freq/gp/search] [knn/range]"
@@ -30,12 +30,12 @@ check_dir_and_make_if_absent() {
 
 case $1 in
   debug)
-    cmake -DCMAKE_BUILD_TYPE=Debug .. -B /data/starling/debug
-    EXE_PATH=/data/starling/debug
+    cmake -DCMAKE_BUILD_TYPE=Debug .. -B ${DATA_DIR}/starling/debug
+    EXE_PATH=${DATA_DIR}/starling/debug
   ;;
   release)
-    cmake -DCMAKE_BUILD_TYPE=Release .. -B /data/starling/release
-    EXE_PATH=/data/starling/release
+    cmake -DCMAKE_BUILD_TYPE=Release .. -B ${DATA_DIR}/starling/release
+    EXE_PATH=${DATA_DIR}/starling/release
   ;;
   *)
     print_usage_and_exit
@@ -45,7 +45,7 @@ pushd $EXE_PATH
 make -j
 popd
 
-mkdir -p /data/starling && cd /data/starling
+mkdir -p ${DATA_DIR}/starling && cd ${DATA_DIR}/starling
 
 date
 case $2 in
@@ -141,6 +141,7 @@ case $2 in
       if [ -f "${GP_FILE_PATH}" ]; then
         cp ${OLD_INDEX_FILE} ${INDEX_PREFIX_PATH}_disk.index
         cp ${GP_FILE_PATH} ${INDEX_PREFIX_PATH}_partition.bin
+        echo "copy done."
         exit 0
       else
         echo "${GP_FILE_PATH} not found."

@@ -945,48 +945,31 @@ namespace diskann {
             expanded_nodes_ids.insert(n);
           }
         }
-        des.clear();
-        if (_dynamic_index) {
-          LockGuard guard(_locks[n]);
-          for (unsigned m = 0; m < _final_graph[n].size(); m++) {
-            if (_final_graph[n][m] >= _max_points + _num_frozen_pts) {
-              std::stringstream msg;
-              msg << "Out of range edge " << _final_graph[n][m]
-                  << " found at vertex " << n << std::endl;
-              throw diskann::ANNException(msg.str(), -1, __FUNCSIG__, __FILE__,
-                                          __LINE__);
-            }
-            des.emplace_back(_final_graph[n][m]);
-          }
-        } else {
-          for (unsigned m = 0; m < _final_graph[n].size(); m++) {
-            if (_final_graph[n][m] >= _max_points + _num_frozen_pts) {
-              std::stringstream msg;
-              msg << "Out of range edge " << _final_graph[n][m]
-                  << " found at vertex " << n << std::endl;
-              throw diskann::ANNException(msg.str(), -1, __FUNCSIG__, __FILE__,
-                                          __LINE__);
-            }
-            des.emplace_back(_final_graph[n][m]);
-          }
-        }
 
-        for (unsigned m = 0; m < des.size(); ++m) {
-          unsigned id = des[m];
+        unsigned nnbrs = _final_graph[n].size();
+        for (unsigned m = 0; m < nnbrs; m++) {
+          if (_final_graph[n][m] >= _max_points + _num_frozen_pts) {
+            std::stringstream msg;
+            msg << "Out of range edge " << _final_graph[n][m]
+                << " found at vertex " << n << std::endl;
+            throw diskann::ANNException(msg.str(), -1, __FUNCSIG__, __FILE__,
+                                        __LINE__);
+          }
+          unsigned id = _final_graph[n][m];
           bool     id_is_missing = fast_iterate ? inserted_into_pool_bs[id] == 0
                                             : inserted_into_pool_rs.find(id) ==
                                                   inserted_into_pool_rs.end();
           if (id_is_missing) {
+            if ((m + 1) < nnbrs) {
+              // auto nextn = _final_graph[n][m + 1];
+              diskann::prefetch_vector(
+                  (const char *) _data + _aligned_dim * (size_t) _final_graph[n][m + 1],
+                  sizeof(T) * _aligned_dim);
+            }
             if (fast_iterate) {
               inserted_into_pool_bs[id] = 1;
             } else {
               inserted_into_pool_rs.insert(id);
-            }
-            if ((m + 1) < des.size()) {
-              auto nextn = des[m + 1];
-              diskann::prefetch_vector(
-                  (const char *) _data + _aligned_dim * (size_t) nextn,
-                  sizeof(T) * _aligned_dim);
             }
 
             cmps++;

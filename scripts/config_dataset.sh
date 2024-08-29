@@ -2,13 +2,15 @@
 
 # Switch dataset in the config_local.sh file by calling the desired function
 
+DATA_DIR="/raid0_data"
+
 #################
 #   BIGANN10M   #
 #################
 dataset_sift1M() {
-  BASE_PATH=/data/sift/sift_base.fbin
-  QUERY_FILE=/data/sift/sift_query.fbin
-  GT_FILE=/data/sift/sift_query_base_gt100.ibin 
+  BASE_PATH=${DATA_DIR}/sift/sift_base.fbin
+  QUERY_FILE=${DATA_DIR}/sift/sift_query.fbin
+  GT_FILE=${DATA_DIR}/sift/sift_query_base_gt100.ibin 
   PREFIX=bigann_10m
   DATA_TYPE=float
   DIST_FN=l2
@@ -19,9 +21,9 @@ dataset_sift1M() {
 }
 
 dataset_bigann1M() {
-  BASE_PATH=/data/bigann/bigann_base_1M.bin
-  QUERY_FILE=/data/bigann/bigann_query.bin
-  GT_FILE=/data/bigann/gnd/computed_gt_1000_1M.bin
+  BASE_PATH=${DATA_DIR}/bigann/bigann_base_1M.bin
+  QUERY_FILE=${DATA_DIR}/bigann/bigann_query.bin
+  GT_FILE=${DATA_DIR}/bigann/gnd/computed_gt_1000_1M.bin
   PREFIX=bigann_1M
   DATA_TYPE=uint8
   DIST_FN=l2
@@ -32,9 +34,9 @@ dataset_bigann1M() {
 }
 
 dataset_bigann5M() {
-  BASE_PATH=/data/bigann/bigann_base_5M.bin
-  QUERY_FILE=/data/bigann/bigann_query.bin
-  GT_FILE=/data/bigann/gnd/computed_gt_1000_5M.bin 
+  BASE_PATH=${DATA_DIR}/bigann/bigann_base_5M.bin
+  QUERY_FILE=${DATA_DIR}/bigann/bigann_query.bin
+  GT_FILE=${DATA_DIR}/bigann/gnd/computed_gt_1000_5M.bin 
   PREFIX=bigann_5M
   DATA_TYPE=uint8
   DIST_FN=l2
@@ -45,9 +47,9 @@ dataset_bigann5M() {
 }
 
 dataset_bigann10M() {
-  BASE_PATH=/data/bigann/bigann_base_10M.bin
-  QUERY_FILE=/data/bigann/bigann_query.bin
-  GT_FILE=/data/bigann/gnd/computed_gt_1000_10M.bin 
+  BASE_PATH=${DATA_DIR}/bigann/bigann_base_10M.bin
+  QUERY_FILE=${DATA_DIR}/bigann/bigann_query.bin
+  GT_FILE=${DATA_DIR}/bigann/gnd/computed_gt_1000_10M.bin 
   PREFIX=bigann_10M
   DATA_TYPE=uint8
   DIST_FN=l2
@@ -58,9 +60,9 @@ dataset_bigann10M() {
 }
 
 dataset_bigann20M() {
-  BASE_PATH=/data/bigann/bigann_base_20M.bin
-  QUERY_FILE=/data/bigann/bigann_query.bin
-  GT_FILE=/data/bigann/gnd/computed_gt_1000_20M.bin 
+  BASE_PATH=${DATA_DIR}/bigann/bigann_base_20M.bin
+  QUERY_FILE=${DATA_DIR}/bigann/bigann_query.bin
+  GT_FILE=${DATA_DIR}/bigann/gnd/computed_gt_1000_20M.bin 
   PREFIX=bigann_20M
   DATA_TYPE=uint8
   DIST_FN=l2
@@ -71,9 +73,9 @@ dataset_bigann20M() {
 }
 
 dataset_bigann50M() {
-  BASE_PATH=/data/bigann/bigann_base_50M.bin
-  QUERY_FILE=/data/bigann/bigann_query.bin
-  GT_FILE=/data/bigann/gnd/computed_gt_1000_50M.bin 
+  BASE_PATH=${DATA_DIR}/bigann/bigann_base_50M.bin
+  QUERY_FILE=${DATA_DIR}/bigann/bigann_query.bin
+  GT_FILE=${DATA_DIR}/bigann/gnd/computed_gt_1000_50M.bin 
   PREFIX=bigann_50M
   DATA_TYPE=uint8
   DIST_FN=l2
@@ -84,9 +86,9 @@ dataset_bigann50M() {
 }
 
 dataset_bigann100M() {
-  BASE_PATH=/data/bigann/bigann_base_100M.bin
-  QUERY_FILE=/data/bigann/bigann_query.bin
-  GT_FILE=/data/bigann/gnd/computed_gt_1000_100M.bin 
+  BASE_PATH=${DATA_DIR}/bigann/bigann_base_100M.bin
+  QUERY_FILE=${DATA_DIR}/bigann/bigann_query.bin
+  GT_FILE=${DATA_DIR}/bigann/gnd/computed_gt_1000_100M.bin 
   PREFIX=bigann_100M
   DATA_TYPE=uint8
   DIST_FN=l2

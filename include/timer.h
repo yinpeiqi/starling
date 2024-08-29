@@ -21,5 +21,11 @@ namespace diskann {
                  _clock::now() - check_point)
           .count();
     }
+
+    long long elapsed_ns() const {
+      return std::chrono::duration_cast<std::chrono::nanoseconds>(
+                 _clock::now() - check_point)
+          .count();
+    }
   };
 }  // namespace diskann

@@ -11,11 +11,11 @@ print_usage_and_exit(){
     echo "Usage: ./unset.sh [compile/index_file/gp/mem_index/freq/sample_file/index_dir/relayout] [release/debug]"
     exit -1;
 }
-cd /data/starling
+cd ${DATA_DIR}/starling
 case $1 in 
     compile)
         echo "remove all compiled file."
-        rm -rf /data/starling/debug /data/starling/release
+        rm -rf ${DATA_DIR}/starling/debug ${DATA_DIR}/starling/release
     ;;
     index_file)
         echo "copy the un-gp disk index to disk index"
@@ -59,12 +59,12 @@ case $1 in
     relayout)
         case $2 in
             debug)
-                cmake -DCMAKE_BUILD_TYPE=Debug .. -B /data/starlingdebug
-                EXE_PATH=/data/starlingdebug
+                cmake -DCMAKE_BUILD_TYPE=Debug .. -B ${DATA_DIR}/starlingdebug
+                EXE_PATH=${DATA_DIR}/starlingdebug
             ;;
             release)
-                cmake -DCMAKE_BUILD_TYPE=Release .. -B /data/starlingrelease
-                EXE_PATH=/data/starlingrelease
+                cmake -DCMAKE_BUILD_TYPE=Release .. -B ${DATA_DIR}/starlingrelease
+                EXE_PATH=${DATA_DIR}/starlingrelease
             ;;
             *)
                 print_usage_and_exit
