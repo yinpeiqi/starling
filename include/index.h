@@ -371,7 +371,7 @@ namespace diskann {
     DISKANN_DLLEXPORT size_t load_tags(const std::string tag_file_name);
     DISKANN_DLLEXPORT size_t load_delete_set(const std::string &filename);
 
-   private:
+  //  private:
     // Distance functions
     Metric       _dist_metric = diskann::L2;
     Distance<T> *_distance = nullptr;

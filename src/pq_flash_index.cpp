@@ -1051,6 +1051,7 @@ namespace diskann {
                 }
               }
             }
+            // std::cout << "k:" << k << ", marker:" << marker << ", id:" << retset[marker].id << std::endl;
           }
         }
         marker++;

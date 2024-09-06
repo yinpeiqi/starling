@@ -74,7 +74,7 @@ namespace diskann {
     std::vector<Neighbor> retset(l_search + 1);
     // std::vector<bool> visited(10000000, false);
     tsl::robin_set<_u64> &visited = *(query_scratch->visited);
-    tsl::robin_set<unsigned> &page_visited = *(query_scratch->page_visited);    // deperate
+    // tsl::robin_set<unsigned> &page_visited = *(query_scratch->page_visited);    // deperate
     tsl::robin_map<_u64, bool> exact_visited;
     unsigned cur_list_size = 0;
 
@@ -102,6 +102,7 @@ namespace diskann {
         stats->cmp_us += (double) tmp_timer.elapsed();
       }
       full_retset.push_back(Neighbor(id, cur_expanded_dist, true));
+      exact_visited[id] = true;
       return cur_expanded_dist;
     };
 
@@ -111,10 +112,6 @@ namespace diskann {
       unsigned nbors_cand_size = 0;
       tmp_timer.reset();
       for (unsigned m = 0; m < nnbrs; ++m) {
-        // if (!visited[node_nbrs[m]]) {
-        //   node_nbrs[nbors_cand_size++] = node_nbrs[m];
-        //   visited[node_nbrs[m]] = true;
-        // }
         if (visited.find(node_nbrs[m]) != visited.end()) {
           continue;
         }
@@ -244,8 +241,6 @@ namespace diskann {
         }
 
         _u32 exact_id = frontier_nhoods[sector_buf];
-        // std::cout << "process " << int((sector_buf - sector_scratch) / SECTOR_LEN) << std::endl;
-
         unsigned pid = id2page_[exact_id];
         const unsigned p_size = gp_layout_[pid].size();
         unsigned* node_in_page = gp_layout_[pid].data();
@@ -254,7 +249,8 @@ namespace diskann {
         unsigned cand_size = 0;
         for (unsigned j = 0; j < p_size; ++j) {
           unsigned id = gp_layout_[pid][j];
-          if (id != exact_id && (dist_scratch[j] >= retset[cur_list_size - 1].distance * 1.2)) {
+          if (id != exact_id && (dist_scratch[j] >= retset[cur_list_size - 1].distance * 1.2 
+              || exact_visited[id])) {
             continue;
           }
           char *node_buf = sector_buf + j * max_node_len;
@@ -285,10 +281,19 @@ namespace diskann {
         while (marker < cur_list_size && num_seen < beam_width) {
           if (retset[marker].flag) {
             const unsigned pid = id2page_[retset[marker].id];
-            if (page_visited.find(pid) == page_visited.end()) {
+            if (exact_visited.find(retset[marker].id) == exact_visited.end()) {
+            // if (page_visited.find(pid) == page_visited.end()) {
               num_seen++;
               frontier.push_back(retset[marker].id);
-              page_visited.insert(pid);
+              for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
+                unsigned id = gp_layout_[pid][j];
+                if (exact_visited.find(id) == exact_visited.end())
+                  exact_visited.insert({id, false});
+                else if (stats != nullptr) {
+                  stats->repeat_read++;
+                }
+              }
+              // page_visited.insert(pid);
             }
             retset[marker].flag = false;
           }

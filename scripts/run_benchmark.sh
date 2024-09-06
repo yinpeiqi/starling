@@ -95,7 +95,7 @@ case $2 in
       --alpha ${MEM_ALPHA} > ${MEM_INDEX_PATH}build.log
   ;;
   freq)
-    check_dir_and_make_if_absent ${FREQ_PATH}
+    # check_dir_and_make_if_absent ${FREQ_PATH}
     FREQ_LOG="${FREQ_PATH}freq.log"
 
     DISK_FILE_PATH=${INDEX_PREFIX_PATH}_disk_beam_search.index
@@ -120,6 +120,28 @@ case $2 in
               -W $FREQ_BM \
               --mem_L ${FREQ_MEM_L} \
               --use_page_search 0 \
+              --disk_file_path ${DISK_FILE_PATH} > ${FREQ_LOG}
+  ;;
+  dist)
+    # check_dir_and_make_if_absent ${FREQ_PATH}
+    FREQ_LOG="${FREQ_PATH}_dist_freq.log"
+
+    DISK_FILE_PATH=${INDEX_PREFIX_PATH}_disk_beam_search.index
+    if [ ! -f $DISK_FILE_PATH ]; then
+      DISK_FILE_PATH=${INDEX_PREFIX_PATH}_disk.index
+    fi
+
+    echo "Generating distance (frequency) file... ${FREQ_LOG}"
+    time ${EXE_PATH}/tests/cal_disk_index_distance \
+              --data_type $DATA_TYPE \
+              --dist_fn $DIST_FN \
+              --index_path_prefix $INDEX_PREFIX_PATH \
+              --freq_save_path $FREQ_PATH \
+              --query_file $FREQ_QUERY_FILE \
+              --num_nodes_to_cache ${DATA_N} \
+              -T $FREQ_T \
+              --mem_L ${FREQ_MEM_L} \
+              --mem_index_path ${MEM_INDEX_PATH}_index \
               --disk_file_path ${DISK_FILE_PATH} > ${FREQ_LOG}
   ;;
   dgp)
@@ -188,11 +210,19 @@ case $2 in
       GP_FILE_PATH=${GP_PATH}_part.bin
       echo "Running graph partition... ${GP_FILE_PATH}.log"
       if [ ${GP_USE_FREQ} -eq 1 ]; then
+        echo "use freq"
         time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
           --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --freq_file ${FREQ_PATH}_freq.bin --lock_nums ${GP_LOCK_NUMS} --cut ${GP_CUT} --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log
       else
-        time ${EXE_PATH}/graph_partition/partitioner --index_file ${OLD_INDEX_FILE} \
-          --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log
+        echo "use dist"
+        if [ ${GP_USE_FREQ} -eq 2 ]; then
+          gdb ${EXE_PATH}/graph_partition/partitioner -ex "run --index_file ${OLD_INDEX_FILE} \
+            --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --freq_file ${FREQ_PATH}_nhops.bin --lock_nums ${GP_LOCK_NUMS} --cut ${GP_CUT} --scale ${GP_SCALE_F} --dist_freq 1 > ${GP_FILE_PATH}.log"
+        else
+        echo "not using freq or dist"
+          gdb ${EXE_PATH}/graph_partition/partitioner -ex "run --index_file ${OLD_INDEX_FILE} \
+            --data_type $GP_DATA_TYPE --gp_file $GP_FILE_PATH -T $GP_T --ldg_times $GP_TIMES --scale ${GP_SCALE_F} > ${GP_FILE_PATH}.log"
+        fi
       fi
 
       echo "Running relayout... ${GP_PATH}relayout.log"

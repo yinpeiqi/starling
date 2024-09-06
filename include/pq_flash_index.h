@@ -135,6 +135,10 @@ namespace diskann {
         float *res_dists, const _u64 beam_width, const _u32 io_limit,
         const bool use_reorder_data = false, QueryStats *stats = nullptr, const _u32 mem_L = 0);
 
+    DISKANN_DLLEXPORT void generate_node_distance_to_mediod(
+        const std::string& dist_save_path,
+        const _u32 mem_L = 0);
+
     DISKANN_DLLEXPORT void page_search(
         const T *query, const _u64 k_search, const _u32 mem_L, const _u64 l_search, _u64 *res_ids,
         float *res_dists, const _u64 beam_width, const _u32 io_limit,
