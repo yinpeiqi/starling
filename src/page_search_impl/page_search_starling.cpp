@@ -12,7 +12,7 @@ namespace diskann {
       const T *query1, const _u64 k_search, const _u32 mem_L, const _u64 l_search, _u64 *indices,
       float *distances, const _u64 beam_width, const _u32 io_limit,
       const bool use_reorder_data, const float use_ratio, QueryStats *stats) {
-    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer, subpart_timer;
+    Timer                 query_timer, tmp_timer, part_timer;
     ThreadData<T> data = this->thread_data.pop();
     while (data.scratch.sector_scratch == nullptr) {
       this->thread_data.wait_for_push_notify();
@@ -289,7 +289,6 @@ namespace diskann {
         vis_cand.reserve(p_size);
 
         // compute exact distances of the vectors within the page
-        subpart_timer.reset();
         for (unsigned j = 0; j < p_size; ++j) {
           const unsigned id = gp_layout_[pid][j];
           if (id == last_io_id) continue;
@@ -297,19 +296,14 @@ namespace diskann {
           float dist = compute_exact_dists_and_push(node_buf, id);
           vis_cand.emplace_back(dist, node_buf);
         }
-        if (stats != nullptr) stats->page_cal_node_us += (double) subpart_timer.elapsed();
-        subpart_timer.reset();
         if (vis_size && vis_size != p_size) {
           std::sort(vis_cand.begin(), vis_cand.end());
         }
-        if (stats != nullptr) stats->page_sort_us += (double) subpart_timer.elapsed();
 
         // compute PQ distances for neighbours of the vectors in the page
-        subpart_timer.reset();
         for (unsigned j = 0; j < vis_size; ++j) {
           compute_and_push_nbrs(vis_cand[j].second, nk);
         }
-        if (stats != nullptr) stats->page_ins_nb_us += (double) subpart_timer.elapsed();
       }
       last_io_ids.clear();
       if (stats != nullptr) stats->page_proc_us += (double) part_timer.elapsed();
