@@ -70,7 +70,7 @@ namespace diskann {
     float *dist_scratch = query_scratch->aligned_dist_scratch;
     _u8 *  pq_coord_scratch = query_scratch->aligned_pq_coord_scratch;
 
-    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer, subpart_timer;
+    Timer                 query_timer, tmp_timer, part_timer;
     std::vector<Neighbor> retset(l_search + 1);
     // std::vector<bool> visited(10000000, false);
     tsl::robin_set<_u64> &visited = *(query_scratch->visited);

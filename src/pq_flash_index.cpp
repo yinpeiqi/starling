@@ -883,6 +883,7 @@ namespace diskann {
       const T *query1, const _u64 k_search, const _u64 l_search, _u64 *indices,
       float *distances, const _u64 beam_width, const _u32 io_limit,
       const bool use_reorder_data, QueryStats *stats, const _u32 mem_L) {
+    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer;
     ThreadData<T> data = this->thread_data.pop();
     while (data.scratch.sector_scratch == nullptr) {
       this->thread_data.wait_for_push_notify();
@@ -951,7 +952,6 @@ namespace diskann {
       pq_flash_index_utils::pq_dist_lookup(pq_coord_scratch, n_ids, this->n_chunks, pq_dists,
                        dists_out);
     };
-    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer;  // temp timer
     std::vector<Neighbor> retset(l_search + 1);
     tsl::robin_set<_u64> &visited = *(query_scratch->visited);
 

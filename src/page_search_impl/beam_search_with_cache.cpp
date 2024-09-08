@@ -12,6 +12,7 @@ namespace diskann {
       const T *query1, const _u64 k_search, const _u32 mem_L, const _u64 l_search, _u64 *indices,
       float *distances, const _u64 beam_width, const _u32 io_limit,
       const bool use_reorder_data, const float use_ratio, QueryStats *stats) {
+    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer, subpart_timer;
     ThreadData<T> data = this->thread_data.pop();
     while (data.scratch.sector_scratch == nullptr) {
       this->thread_data.wait_for_push_notify();
@@ -70,7 +71,6 @@ namespace diskann {
     float *dist_scratch = query_scratch->aligned_dist_scratch;
     _u8 *  pq_coord_scratch = query_scratch->aligned_pq_coord_scratch;
 
-    Timer                 query_timer, io_timer, cpu_timer, tmp_timer, part_timer, subpart_timer;
     std::vector<Neighbor> retset(l_search + 1);
     tsl::robin_set<_u64> &visited = *(query_scratch->visited);
     tsl::robin_set<unsigned> &page_visited = *(query_scratch->page_visited);
