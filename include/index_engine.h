@@ -9,7 +9,7 @@
 #include "tsl/robin_map.h"
 #include "tsl/robin_set.h"
 
-#include "aligned_file_reader.h"
+#include "file_io_manager.h"
 #include "concurrent_queue.h"
 #include "neighbor.h"
 #include "parameters.h"
@@ -62,7 +62,7 @@ namespace diskann {
   class IndexEngine {
    public:
     DISKANN_DLLEXPORT IndexEngine(
-        std::shared_ptr<AlignedFileReader> &fileReader,
+        std::shared_ptr<FileIOManager> &fio_manager,
         diskann::Metric                     metric = diskann::Metric::L2);
     DISKANN_DLLEXPORT ~IndexEngine();
 
@@ -89,9 +89,12 @@ namespace diskann {
         const _u64 beam_width, const _u32 io_limit, const bool use_reorder_data = false,
         const float pq_filter_ratio = 1.2f, QueryStats *stats = nullptr);
 
-    std::shared_ptr<AlignedFileReader> &reader;
+    std::shared_ptr<FileIOManager> &io_manager;
 
     DISKANN_DLLEXPORT unsigned get_nnodes_per_sector() { return nnodes_per_sector; }
+
+    void load_disk_cache_data(const std::string &index_prefix);
+    void write_disk_cache_layout(const std::string &index_prefix);
 
    protected:
     DISKANN_DLLEXPORT void use_medoids_data_as_centroids();
@@ -184,6 +187,11 @@ namespace diskann {
     // page search
     std::vector<unsigned> id2page_;
     std::vector<std::vector<unsigned>> gp_layout_;
+
+    // disk cache
+    int disk_fid;
+    int cache_fid;
+    tsl::robin_map<_u32, _u32> id2cache_page_;
 
 #ifdef EXEC_ENV_OLS
     // Set to a larger value than the actual header to accommodate

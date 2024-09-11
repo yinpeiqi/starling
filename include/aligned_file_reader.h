@@ -74,6 +74,24 @@ struct AlignedRead {
   }
 };
 
+// NOTE :: all 3 fields must be 512-aligned
+// actually this structure is the same as Read
+struct AlignedWrite {
+  uint64_t offset;  // where to write
+  uint64_t len;     // how much to write
+  void*    buf;     // where to write from
+
+  AlignedWrite() : offset(0), len(0), buf(nullptr) {
+  }
+
+  AlignedWrite(uint64_t offset, uint64_t len, void* buf)
+      : offset(offset), len(len), buf(buf) {
+    assert(IS_512_ALIGNED(offset));
+    assert(IS_512_ALIGNED(len));
+    assert(IS_512_ALIGNED(buf));
+  }
+};
+
 class AlignedFileReader {
  protected:
   tsl::robin_map<std::thread::id, IOContext> ctx_map;

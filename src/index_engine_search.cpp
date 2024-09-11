@@ -50,6 +50,7 @@ namespace diskann {
       std::vector<char*> sector_buffers(MAX_N_SECTOR_READS);
       // pre-allocated buffer
       std::vector<char*> tmp_bufs(beam_width * 2);
+      std::vector<int> read_fids(beam_width * 2);
       std::vector<unsigned> nbr_buf(max_degree);
       while(true) {
         int i = cur_task++;
@@ -226,7 +227,7 @@ namespace diskann {
             unsigned min_r = 0;
             if (n_proc_in_q == 0) min_r = 1;
             part_timer.reset();
-            int n_read_blks = reader->get_events(ctx, min_r, n_io_in_q, tmp_bufs);
+            int n_read_blks = io_manager->get_events(ctx, min_r, n_io_in_q, tmp_bufs);
             for (int i = n_read_blks - 1; i >= 0; i--) {
               sector_buffers[top_bufs_idx] = tmp_bufs[i];
               top_bufs_idx = (top_bufs_idx + 1) % MAX_N_SECTOR_READS;
@@ -284,6 +285,7 @@ namespace diskann {
             // clear iteration state
             frontier.clear();
             frontier_read_reqs.clear();
+            read_fids.clear();
             // find new beam
             if (nk < k) k = nk;
             _u32 marker = k;
@@ -325,13 +327,14 @@ namespace diskann {
                 auto offset = (static_cast<_u64>(id2page_[id] + 1)) * SECTOR_LEN;
                 frontier_nhoods.insert({sector_buf, id});
                 frontier_read_reqs.push_back(AlignedRead(offset, SECTOR_LEN, sector_buf));
+                read_fids.push_back(disk_fid);
                 if (stats != nullptr) {
                   stats->n_4k++;
                   stats->n_ios++;
                 }
                 num_ios++;
               }
-              reader->submit_reqs(frontier_read_reqs, ctx);
+              io_manager->submit_reqs(frontier_read_reqs, read_fids, ctx);
               if (stats != nullptr) stats->read_disk_us += (double) part_timer.elapsed();
             }
             nk = cur_list_size;

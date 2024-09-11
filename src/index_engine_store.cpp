@@ -26,9 +26,9 @@
 
 namespace diskann {
   template<typename T>
-  IndexEngine<T>::IndexEngine(std::shared_ptr<AlignedFileReader> &fileReader,
+  IndexEngine<T>::IndexEngine(std::shared_ptr<FileIOManager> &IOManager,
                                 diskann::Metric m)
-      : reader(fileReader), metric(m) {
+      : io_manager(IOManager), metric(m) {
     if (m == diskann::Metric::COSINE || m == diskann::Metric::INNER_PRODUCT) {
       if (std::is_floating_point<T>::value) {
         diskann::cout << "Cosine metric chosen for (normalized) float data."
@@ -65,7 +65,7 @@ namespace diskann {
 
     if (load_flag) {
       this->destroy_thread_data();
-      reader->close();
+      io_manager->close();
     }
   }
 
@@ -77,8 +77,8 @@ namespace diskann {
     scratchs.resize(nthreads);
     // parallel for
     pool->runTask([&, this](int tid) {
-      this->reader->register_thread();
-      ctxs[tid] = this->reader->get_ctx();
+      this->io_manager->register_thread();
+      ctxs[tid] = this->io_manager->get_ctx();
       // alloc space for the thread
       DataScratch<T> scratch;
       diskann::alloc_aligned((void **) &scratch.sector_scratch,
@@ -124,7 +124,7 @@ namespace diskann {
       delete scratch.visited;
       delete scratch.page_visited;
     }
-    this->reader->deregister_all_threads();
+    this->io_manager->deregister_all_threads();
   }
 
   template<typename T>
@@ -148,7 +148,7 @@ namespace diskann {
       medoid_read[0].len = SECTOR_LEN;
       medoid_read[0].buf = medoid_buf;
       medoid_read[0].offset = NODE_SECTOR_NO(medoid) * SECTOR_LEN;
-      reader->read(medoid_read, ctx);
+      io_manager->read(medoid_read, ctx);
 
       // all data about medoid
       char *medoid_node_buf = OFFSET_TO_NODE(medoid_buf, medoid);
@@ -283,8 +283,8 @@ namespace diskann {
     // disk_index_file. But  this is now exclusively a preserve of the
     // DiskPriorityIO class. So, we need to estimate how many
     // bytes are needed to store the header and read in that many using our
-    // 'standard' aligned file reader approach.
-    reader->open(disk_index_file);
+    // 'standard' io_manager approach.
+    io_manager->open(disk_index_file, O_DIRECT | O_RDONLY | O_LARGEFILE);
     this->setup_thread_data(num_threads);
     this->max_nthreads = num_threads;
 
@@ -366,9 +366,9 @@ namespace diskann {
     this->load_partition_data(index_prefix, nnodes_per_sector, num_points);
 
 #ifndef EXEC_ENV_OLS
-    // open AlignedFileReader handle to index_file
+    // open FileIOManager handle to index_file
     std::string index_fname(disk_index_file);
-    reader->open(index_fname);
+    this->disk_fid = io_manager->open(index_fname, O_DIRECT | O_RDONLY | O_LARGEFILE);
     this->setup_thread_data(num_threads);
     this->max_nthreads = num_threads;
 
@@ -443,8 +443,43 @@ namespace diskann {
                 << this->max_base_norm << std::endl;
       delete[] norm_val;
     }
+    // load cache data
+    load_disk_cache_data(index_prefix);
+
     diskann::cout << "done.." << std::endl;
     return 0;
+  }
+
+  template<typename T>
+  void IndexEngine<T>::load_disk_cache_data(const std::string &index_prefix) {
+    std::string disk_cache_file = std::string(index_prefix) + "_disk_cache.index";
+    std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
+    this->cache_fid = io_manager->open(disk_cache_file, O_DIRECT | O_RDWR | O_CREAT | O_LARGEFILE);
+    if (file_exists(disk_cache_layout_file)) {
+      std::ifstream cache_layout(disk_cache_layout_file, std::ios::binary | std::ios::in);
+      _u64 n_cache_nodes;
+      _u32 node_id, page_id;
+      cache_layout.read((char *) &n_cache_nodes, sizeof(_u64));
+      for (int i = 0; i < n_cache_nodes; i++) {
+        cache_layout.read((char *) &node_id, sizeof(_u32));
+        cache_layout.read((char *) &page_id, sizeof(_u32));
+        this->id2cache_page_.insert({node_id, page_id});
+      }
+      diskann::cout << "Read disk cache with " << n_cache_nodes << " nodes." << std::endl;
+    }
+  }
+
+  template<typename T>
+  void IndexEngine<T>::write_disk_cache_layout(const std::string &index_prefix) {
+    std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
+    std::ofstream cache_layout(disk_cache_layout_file, std::ios::binary | std::ios::out | std::ios::trunc);
+    _u64 tot_size = this->id2cache_page_.size();
+    cache_layout.write((char *) &tot_size, sizeof(_u64));
+    for (auto& pair : this->id2cache_page_) {
+      cache_layout.write((char *) &(pair.first), sizeof(_u32));
+      cache_layout.write((char *) &(pair.second), sizeof(_u32));
+    }
+    diskann::cout << "Write disk cache with " << tot_size << " nodes." << std::endl;
   }
 
   template<typename T>

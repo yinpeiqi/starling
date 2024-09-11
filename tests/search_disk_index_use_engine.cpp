@@ -20,18 +20,10 @@
 #include "utils.h"
 #include "percentile_stats.h"
 
-#ifndef _WINDOWS
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
-#include "linux_aligned_file_reader.h"
-#else
-#ifdef USE_BING_INFRA
-#include "bing_aligned_file_reader.h"
-#else
-#include "windows_aligned_file_reader.h"
-#endif
-#endif
+#include "file_io_manager.h"
 
 namespace po = boost::program_options;
 
@@ -96,16 +88,8 @@ int search_disk_index_use_engine(
     calc_recall_flag = true;
   }
 
-  std::shared_ptr<AlignedFileReader> reader = nullptr;
-#ifdef _WINDOWS
-#ifndef USE_BING_INFRA
-  reader.reset(new WindowsAlignedFileReader());
-#else
-  reader.reset(new diskann::BingAlignedFileReader());
-#endif
-#else
-  reader.reset(new LinuxAlignedFileReader());
-#endif
+  std::shared_ptr<FileIOManager> reader = nullptr;
+  reader.reset(new FileIOManager());
 
   if(use_sq && !std::is_same<T, float>::value){
     std::cout << "erro, only support float sq" << std::endl;
@@ -325,6 +309,9 @@ int search_disk_index_use_engine(
       diskann::cout << std::endl;
     delete[] stats;
   }
+
+  // here save the cache layout.
+  _index_engine->write_disk_cache_layout(index_path_prefix.c_str());
 
   diskann::cout << "Done searching. Now saving results " << std::endl;
   _u64 test_id = 0;
