@@ -206,7 +206,7 @@ namespace diskann {
         unsigned k = 0;
 
         // cleared every iteration
-        std::vector<unsigned> frontier;
+        std::vector<FrontierData> frontier;
         frontier.reserve(2 * beam_width);
         tsl::robin_map<char*, _u32> frontier_nhoods;
         std::vector<AlignedRead> frontier_read_reqs;
@@ -295,17 +295,32 @@ namespace diskann {
             part_timer.reset();
             while (marker < cur_list_size && num_seen < beam_width) {
               if (retset[marker].flag) {
-                const unsigned pid = id2page_[retset[marker].id];
                 if (exact_visited.find(retset[marker].id) == exact_visited.end()) {
                   num_seen++;
-                  frontier.push_back(retset[marker].id);
-                  for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
-                    unsigned id = gp_layout_[pid][j];
-                    if (exact_visited.find(id) == exact_visited.end())
-                      exact_visited.insert({id, false});
-                    else if (stats != nullptr) {
-                      stats->repeat_read++;
+                  // use the cached page.
+                  if (id2cache_page_.find(retset[marker].id) != id2cache_page_.end()) {
+                    const unsigned pid = id2cache_page_[retset[marker].id];
+                    for (unsigned j = 0; j < cache_layout_[pid].size(); ++j) {
+                      unsigned id = cache_layout_[pid][j];
+                      if (exact_visited.find(id) == exact_visited.end())
+                        exact_visited.insert({id, false});
+                      else if (stats != nullptr) {
+                        stats->repeat_read++;
+                      }
                     }
+                    frontier.emplace_back(retset[marker].id, pid, cache_fid);
+                  }
+                  else {
+                    const unsigned pid = id2page_[retset[marker].id];
+                    for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
+                      unsigned id = gp_layout_[pid][j];
+                      if (exact_visited.find(id) == exact_visited.end())
+                        exact_visited.insert({id, false});
+                      else if (stats != nullptr) {
+                        stats->repeat_read++;
+                      }
+                    }
+                    frontier.emplace_back(retset[marker].id, pid, disk_fid);
                   }
                 }
                 retset[marker].flag = false;
@@ -321,13 +336,15 @@ namespace diskann {
               if (stats != nullptr) stats->n_hops++;
               n_io_in_q += frontier.size();
               for (_u64 i = 0; i < frontier.size(); i++) {
-                auto id = frontier[i];
                 auto sector_buf = sector_scratch + sector_scratch_idx * SECTOR_LEN;
                 sector_scratch_idx = (sector_scratch_idx + 1) % MAX_N_SECTOR_READS;
-                auto offset = (static_cast<_u64>(id2page_[id] + 1)) * SECTOR_LEN;
-                frontier_nhoods.insert({sector_buf, id});
+                auto offset = (static_cast<_u64>(frontier[i].pid)) * SECTOR_LEN;
+                if (frontier[i].fid == disk_fid) {
+                  offset += SECTOR_LEN;
+                }
+                frontier_nhoods.insert({sector_buf, frontier[i].id});
                 frontier_read_reqs.push_back(AlignedRead(offset, SECTOR_LEN, sector_buf));
-                read_fids.push_back(disk_fid);
+                read_fids.push_back(frontier[i].fid);
                 if (stats != nullptr) {
                   stats->n_4k++;
                   stats->n_ios++;

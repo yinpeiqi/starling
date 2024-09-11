@@ -58,6 +58,18 @@ namespace diskann {
     }
   };
 
+  struct FrontierData {
+    unsigned id;
+    unsigned pid;
+    int fid;
+
+    FrontierData(unsigned id, unsigned pid, int fid) {
+        this->id = id;
+        this->pid = pid;
+        this->fid = fid;
+    }
+  };
+
   template<typename T>
   class IndexEngine {
    public:
@@ -192,6 +204,7 @@ namespace diskann {
     int disk_fid;
     int cache_fid;
     tsl::robin_map<_u32, _u32> id2cache_page_;
+    std::vector<std::vector<unsigned>> cache_layout_;
 
 #ifdef EXEC_ENV_OLS
     // Set to a larger value than the actual header to accommodate
