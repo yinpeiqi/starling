@@ -271,24 +271,45 @@ case $2 in
             SEARCH_LOG=${INDEX_PREFIX_PATH}search/search_SQ${USE_SQ}_K${K}_CACHE${CACHE}_BW${BW}_T${T}_MEML${MEM_L}_MEMK${MEM_TOPK}_MEM_USE_FREQ${MEM_USE_FREQ}_PS${USE_PAGE_SEARCH}_USE_RATIO${PS_USE_RATIO}_GP_USE_FREQ${GP_USE_FREQ}_GP_LOCK_NUMS${GP_LOCK_NUMS}_GP_CUT${GP_CUT}.log
             echo "Searching... log file: ${SEARCH_LOG}"
             sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; 
-            gdb ${EXE_PATH}/tests/search_disk_index -ex "run --data_type $DATA_TYPE \
-              --dist_fn $DIST_FN \
-              --index_path_prefix $INDEX_PREFIX_PATH \
-              --query_file $QUERY_FILE \
-              --gt_file $GT_FILE \
-              -K $K \
-              --result_path ${INDEX_PREFIX_PATH}result/result \
-              --num_nodes_to_cache $CACHE \
-              -T $T \
-              -L ${LS} \
-              -W $BW \
-              --mem_L ${MEM_L} \
-              --mem_index_path ${MEM_INDEX_PATH}_index \
-              --use_page_search ${USE_PAGE_SEARCH} \
-              --use_ratio ${PS_USE_RATIO} \
-              --disk_file_path ${DISK_FILE_PATH} \
-              --use_sq ${USE_SQ}       > ${SEARCH_LOG}" 
-            log_arr+=( ${SEARCH_LOG} )
+            if [ $USE_ENGINE -eq 1 ]; then
+              gdb ${EXE_PATH}/tests/search_disk_index_use_engine -ex "run --data_type $DATA_TYPE \
+                --dist_fn $DIST_FN \
+                --index_path_prefix $INDEX_PREFIX_PATH \
+                --query_file $QUERY_FILE \
+                --gt_file $GT_FILE \
+                -K $K \
+                --result_path ${INDEX_PREFIX_PATH}result/result \
+                --num_nodes_to_cache $CACHE \
+                -T $T \
+                -L ${LS} \
+                -W $BW \
+                --mem_L ${MEM_L} \
+                --mem_index_path ${MEM_INDEX_PATH}_index \
+                --use_page_search ${USE_PAGE_SEARCH} \
+                --pq_ratio ${PQ_FILTER_RATIO} \
+                --disk_file_path ${DISK_FILE_PATH} \
+                --use_sq ${USE_SQ}       > ${SEARCH_LOG}" 
+              log_arr+=( ${SEARCH_LOG} )
+            else
+              gdb ${EXE_PATH}/tests/search_disk_index -ex "run --data_type $DATA_TYPE \
+                --dist_fn $DIST_FN \
+                --index_path_prefix $INDEX_PREFIX_PATH \
+                --query_file $QUERY_FILE \
+                --gt_file $GT_FILE \
+                -K $K \
+                --result_path ${INDEX_PREFIX_PATH}result/result \
+                --num_nodes_to_cache $CACHE \
+                -T $T \
+                -L ${LS} \
+                -W $BW \
+                --mem_L ${MEM_L} \
+                --mem_index_path ${MEM_INDEX_PATH}_index \
+                --use_page_search ${USE_PAGE_SEARCH} \
+                --use_ratio ${PS_USE_RATIO} \
+                --disk_file_path ${DISK_FILE_PATH} \
+                --use_sq ${USE_SQ}       > ${SEARCH_LOG}" 
+              log_arr+=( ${SEARCH_LOG} )
+            fi
           done
         done
       ;;
@@ -299,24 +320,45 @@ case $2 in
           do
             SEARCH_LOG=${INDEX_PREFIX_PATH}search/search_SQ${USE_SQ}_K${K}_CACHE${CACHE}_BW${BW}_T${T}_MEML${MEM_L}_MEMK${MEM_TOPK}_MEM_USE_FREQ${MEM_USE_FREQ}_PS${USE_PAGE_SEARCH}_USE_RATIO${PS_USE_RATIO}_GP_USE_FREQ${GP_USE_FREQ}_GP_LOCK_NUMS${GP_LOCK_NUMS}_GP_CUT${GP_CUT}.log
             echo "Searching... log file: ${SEARCH_LOG}"
-            sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; ${EXE_PATH}/tests/search_disk_index --data_type $DATA_TYPE \
-              --dist_fn $DIST_FN \
-              --index_path_prefix $INDEX_PREFIX_PATH \
-              --query_file $QUERY_FILE \
-              --gt_file $GT_FILE \
-              -K $K \
-              --result_path ${INDEX_PREFIX_PATH}result/result \
-              --num_nodes_to_cache $CACHE \
-              -T $T \
-              -L ${LS} \
-              -W $BW \
-              --mem_L ${MEM_L} \
-              --mem_index_path ${MEM_INDEX_PATH}_index \
-              --use_page_search ${USE_PAGE_SEARCH} \
-              --use_ratio ${PS_USE_RATIO} \
-              --disk_file_path ${DISK_FILE_PATH} \
-              --use_sq ${USE_SQ}       > ${SEARCH_LOG} 
-            log_arr+=( ${SEARCH_LOG} )
+            if [ $USE_ENGINE -eq 1 ]; then
+              sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; ${EXE_PATH}/tests/search_disk_index_use_engine --data_type $DATA_TYPE \
+                --dist_fn $DIST_FN \
+                --index_path_prefix $INDEX_PREFIX_PATH \
+                --query_file $QUERY_FILE \
+                --gt_file $GT_FILE \
+                -K $K \
+                --result_path ${INDEX_PREFIX_PATH}result/result \
+                --num_nodes_to_cache $CACHE \
+                -T $T \
+                -L ${LS} \
+                -W $BW \
+                --mem_L ${MEM_L} \
+                --mem_index_path ${MEM_INDEX_PATH}_index \
+                --use_page_search ${USE_PAGE_SEARCH} \
+                --pq_ratio ${PQ_FILTER_RATIO} \
+                --disk_file_path ${DISK_FILE_PATH} \
+                --use_sq ${USE_SQ}       > ${SEARCH_LOG} 
+              log_arr+=( ${SEARCH_LOG} )
+            else
+              sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; ${EXE_PATH}/tests/search_disk_index --data_type $DATA_TYPE \
+                --dist_fn $DIST_FN \
+                --index_path_prefix $INDEX_PREFIX_PATH \
+                --query_file $QUERY_FILE \
+                --gt_file $GT_FILE \
+                -K $K \
+                --result_path ${INDEX_PREFIX_PATH}result/result \
+                --num_nodes_to_cache $CACHE \
+                -T $T \
+                -L ${LS} \
+                -W $BW \
+                --mem_L ${MEM_L} \
+                --mem_index_path ${MEM_INDEX_PATH}_index \
+                --use_page_search ${USE_PAGE_SEARCH} \
+                --use_ratio ${PS_USE_RATIO} \
+                --disk_file_path ${DISK_FILE_PATH} \
+                --use_sq ${USE_SQ}       > ${SEARCH_LOG} 
+              log_arr+=( ${SEARCH_LOG} )
+            fi
           done
         done
       ;;
