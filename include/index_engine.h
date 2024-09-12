@@ -110,7 +110,7 @@ namespace diskann {
 
    protected:
     DISKANN_DLLEXPORT void use_medoids_data_as_centroids();
-    DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads);
+    DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads, _u64 io_threads);
     DISKANN_DLLEXPORT void destroy_thread_data();
     DISKANN_DLLEXPORT void start_io_threads();
 

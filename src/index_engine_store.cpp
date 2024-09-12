@@ -71,7 +71,7 @@ namespace diskann {
 
 
   template<typename T>
-  void IndexEngine<T>::setup_thread_data(_u64 nthreads, _u64 io_threads = 1) {
+  void IndexEngine<T>::setup_thread_data(_u64 nthreads, _u64 io_threads) {
     pool = std::make_shared<ThreadPool>(nthreads);
     ctxs.resize(nthreads + io_threads);
     scratchs.resize(nthreads);
@@ -464,28 +464,40 @@ namespace diskann {
     std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
     this->cache_fid = io_manager->open(disk_cache_file, O_DIRECT | O_RDWR | O_CREAT | O_LARGEFILE);
     if (file_exists(disk_cache_layout_file)) {
-      std::ifstream cache_layout(disk_cache_layout_file, std::ios::binary | std::ios::in);
-      _u64 n_cache_nodes;
+      std::ifstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::in);
+      _u64          partition_nums;
+      cache_part.read((char *) &partition_nums, sizeof(_u64));
+      for (int i = 0; i < partition_nums; i++) {
+        unsigned s;
+        cache_part.read((char *) &s, sizeof(unsigned));
+        this->cache_layout_[i].resize(s);
+        cache_part.read((char *) cache_layout_[i].data(), sizeof(unsigned) * s);
+      }
       _u32 node_id, page_id;
-      cache_layout.read((char *) &n_cache_nodes, sizeof(_u64));
-      for (int i = 0; i < n_cache_nodes; i++) {
-        cache_layout.read((char *) &node_id, sizeof(_u32));
-        cache_layout.read((char *) &page_id, sizeof(_u32));
+      for (int i = 0; i < partition_nums; i++) {
+        cache_part.read((char *) &node_id, sizeof(_u32));
+        cache_part.read((char *) &page_id, sizeof(_u32));
         this->id2cache_page_.insert({node_id, page_id});
       }
-      diskann::cout << "Read disk cache with " << n_cache_nodes << " nodes." << std::endl;
+      diskann::cout << "Read disk cache with " << partition_nums << " nodes." << std::endl;
     }
   }
 
   template<typename T>
   void IndexEngine<T>::write_disk_cache_layout(const std::string &index_prefix) {
     std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
-    std::ofstream cache_layout(disk_cache_layout_file, std::ios::binary | std::ios::out | std::ios::trunc);
+    std::ofstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::out | std::ios::trunc);
     _u64 tot_size = this->id2cache_page_.size();
-    cache_layout.write((char *) &tot_size, sizeof(_u64));
+    assert (tot_size == cache_layout_->size());
+    cache_part.write((char *) &tot_size, sizeof(_u64));
+    for (int i = 0; i < tot_size; i++) {
+      unsigned s = cache_layout_[i].size();
+      cache_part.write((char *) &s, sizeof(_u64));
+      cache_part.write((char *) cache_layout_[i].data(), sizeof(unsigned) * s);
+    }
     for (auto& pair : this->id2cache_page_) {
-      cache_layout.write((char *) &(pair.first), sizeof(_u32));
-      cache_layout.write((char *) &(pair.second), sizeof(_u32));
+      cache_part.write((char *) &(pair.first), sizeof(_u32));
+      cache_part.write((char *) &(pair.second), sizeof(_u32));
     }
     diskann::cout << "Write disk cache with " << tot_size << " nodes." << std::endl;
   }
