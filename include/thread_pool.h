@@ -63,17 +63,18 @@ inline void bindCore(int core) {
 
 class ThreadPool {
 public:
-    ThreadPool(int n_threads) : n_threads_(n_threads), notify_cnt(0), stop(false) {
+    ThreadPool(int n_threads, int start_core = 0) : n_threads_(n_threads), 
+            notify_cnt(0), stop(false), start_core_(start_core) {
         task_ = nullptr;
         activate.resize(n_threads_);
         std::fill(activate.begin(), activate.end(), false);
         // from 1 to n_threads, worker[0] is the server itself.
         for (int i = 1; i < n_threads_; i++) {
             workers.push_back(std::thread(
-            (std::bind(&ThreadPool::start, this, i, i))));
+            (std::bind(&ThreadPool::start, this, i, start_core + i))));
         }
         // bind-core[0] (itself)
-        bindCore(0);
+        bindCore(start_core);
     }
 
     void runTask(std::function<void(int)> task, int n_parallel = -1) {
@@ -97,10 +98,10 @@ public:
 
     // Since this is sequential execution, we can regard these lines
     // are in a same transaction.
-    void executeInOneTransaction(int core_id) {
+    void executeInOneTransaction(int tid) {
         assert (task_.get() != nullptr);
-        (*task_)(core_id);
-        activate[core_id].store(false);
+        (*task_)(tid);
+        activate[tid].store(false);
         notify_cnt--;
     }
 
@@ -125,6 +126,7 @@ public:
 
 private:
     int n_threads_;
+    int start_core_;
 
     std::atomic_bool stop;
     // check whether the last round is done, and workers are ready for next task

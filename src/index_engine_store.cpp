@@ -71,9 +71,9 @@ namespace diskann {
 
 
   template<typename T>
-  void IndexEngine<T>::setup_thread_data(_u64 nthreads) {
+  void IndexEngine<T>::setup_thread_data(_u64 nthreads, _u64 io_threads = 1) {
     pool = std::make_shared<ThreadPool>(nthreads);
-    ctxs.resize(nthreads);
+    ctxs.resize(nthreads + io_threads);
     scratchs.resize(nthreads);
     // parallel for
     pool->runTask([&, this](int tid) {
@@ -105,6 +105,13 @@ namespace diskann {
               this->aligned_dim * sizeof(float));
       scratchs[tid] = scratch;
     });
+    // setup io pool and ctx
+    io_pool = std::make_shared<ThreadPool>(io_threads);
+    pool->runTask([&, this](int tid) {
+      this->io_manager->register_thread();
+      ctxs[nthreads + tid] = this->io_manager->get_ctx();
+    });
+
     load_flag = true;
   }
 
@@ -285,8 +292,9 @@ namespace diskann {
     // bytes are needed to store the header and read in that many using our
     // 'standard' io_manager approach.
     io_manager->open(disk_index_file, O_DIRECT | O_RDONLY | O_LARGEFILE);
-    this->setup_thread_data(num_threads);
     this->max_nthreads = num_threads;
+    this->n_io_nthreads = 1;
+    this->setup_thread_data(num_threads, this->n_io_nthreads);
 
     char *                   bytes = getHeaderBytes();
     ContentBuf               buf(bytes, HEADER_SIZE);

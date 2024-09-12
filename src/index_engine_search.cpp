@@ -400,6 +400,18 @@ namespace diskann {
     });
   }
 
+  void start_io_threads() {
+    pool->runTask([&, this](int tid) {
+      // IO context init.
+      IOContext& ctx = ctxs[tid + this->max_nthreads];
+
+      while (true) {
+        
+      }
+
+    });
+  }
+
   template class IndexEngine<_u8>;
   template class IndexEngine<_s8>;
   template class IndexEngine<float>;

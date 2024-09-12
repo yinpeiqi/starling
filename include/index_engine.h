@@ -110,9 +110,9 @@ namespace diskann {
 
    protected:
     DISKANN_DLLEXPORT void use_medoids_data_as_centroids();
-    DISKANN_DLLEXPORT void setup_thread_pool(_u64 nthreads);
     DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads);
     DISKANN_DLLEXPORT void destroy_thread_data();
+    DISKANN_DLLEXPORT void start_io_threads();
 
    private:
     // index info
@@ -187,8 +187,10 @@ namespace diskann {
     std::vector<DataScratch<T>> scratchs;
     // thread pool
     std::shared_ptr<ThreadPool> pool;
+    std::shared_ptr<ThreadPool> io_pool;
 
     _u64                           max_nthreads;
+    _u64                           n_io_nthreads;
     bool                           load_flag = false;
     bool                           reorder_data_exists = false;
     _u64                           reoreder_data_offset = 0;
