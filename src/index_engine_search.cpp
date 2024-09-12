@@ -44,7 +44,7 @@ namespace diskann {
       tsl::robin_map<_u64, bool>& exact_visited = *(query_scratch->exact_visited);
 
       // pre-allocated data field for searching
-      std::vector<const char*> vis_cand;
+      std::vector<std::pair<_u32, const char*>> vis_cand;
       vis_cand.reserve(20);   // at most researve 12 is enough
       // this is a ring queue for storing sector buffers ptr.
       std::vector<char*> sector_buffers(MAX_N_SECTOR_READS);
@@ -120,7 +120,7 @@ namespace diskann {
           return cur_expanded_dist;
         };
 
-        auto compute_and_push_nbrs = [&](const char *node_buf, unsigned& nk) {
+        auto compute_and_push_nbrs = [&](const char *node_buf, const unsigned src_id, unsigned& nk) {
           unsigned *node_nbrs = OFFSET_TO_NODE_NHOOD(node_buf);
           unsigned nnbrs = *(node_nbrs++);
           unsigned nbors_cand_size = 0;
@@ -270,10 +270,10 @@ namespace diskann {
               _mm_prefetch((char *) node_buf, _MM_HINT_T0);
               compute_exact_dists_and_push(node_buf, id);
               _mm_prefetch((char *) OFFSET_TO_NODE_NHOOD(node_buf), _MM_HINT_T0);
-              vis_cand[cand_size++] = node_buf;
+              vis_cand[cand_size++] = std::make_pair(id, node_buf);
             }
             for (unsigned j = 0; j < cand_size; ++j) {
-              compute_and_push_nbrs(vis_cand[j], nk);
+              compute_and_push_nbrs(vis_cand[j].second, vis_cand[j].first, nk);
             }
             if (stats != nullptr) stats->disk_proc_us += (double) part_timer.elapsed();
 

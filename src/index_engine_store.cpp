@@ -377,8 +377,9 @@ namespace diskann {
     // open FileIOManager handle to index_file
     std::string index_fname(disk_index_file);
     this->disk_fid = io_manager->open(index_fname, O_DIRECT | O_RDONLY | O_LARGEFILE);
-    this->setup_thread_data(num_threads);
     this->max_nthreads = num_threads;
+    this->n_io_nthreads = 1;
+    this->setup_thread_data(num_threads, this->n_io_nthreads);
 
 #endif
 
