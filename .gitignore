@@ -359,4 +359,4 @@ cscope*
 build/
 .vscode/
 indices/
-scripts/config_local.sh
+# scripts/config_local.sh
