@@ -60,7 +60,7 @@ T_LIST=(1)
 CACHE=0
 MEM_L=10 # non-zero to enable
 
-USE_ENGINE=1 # whether use search engine
+USE_ENGINE=0 # whether use search engine
 # Page Search
 USE_PAGE_SEARCH=1 # Set 0 for beam search, 1 for page search (default)
 PS_USE_RATIO=0.3
