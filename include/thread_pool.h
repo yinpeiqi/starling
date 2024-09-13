@@ -66,6 +66,7 @@ public:
     ThreadPool(int n_threads, int start_core = 0) : n_threads_(n_threads), 
             notify_cnt(0), stop(false), start_core_(start_core) {
         task_ = nullptr;
+        thread_0_is_worker_ = (start_core == 0);
         activate.resize(n_threads_);
         std::fill(activate.begin(), activate.end(), false);
         // from 1 to n_threads, worker[0] is the server itself.
@@ -73,8 +74,28 @@ public:
             workers.push_back(std::thread(
             (std::bind(&ThreadPool::start, this, i, start_core + i))));
         }
-        // bind-core[0] (itself)
-        bindCore(start_core);
+        if (start_core == 0) {
+            // bind-core[0] (itself)
+            bindCore(start_core);
+        } else {
+            workers.push_back(std::thread(
+            (std::bind(&ThreadPool::start, this, 0, start_core))));
+        }
+    }
+
+    void runTaskAsync(std::function<void(int)> task, int n_parallel = -1) {
+        std::atomic_store(&task_, std::make_shared<std::function<void(int)>>(task));
+        if (n_parallel == -1) n_parallel = n_threads_;
+        notify_cnt.store(n_parallel);
+        std::fill_n(activate.begin(), n_parallel, true);
+    }
+
+    void endTaskAsync() {
+        while (notify_cnt.load() > 0 && !stop.load()) {
+            continue;
+        }
+        // clear task_.
+        std::atomic_store(&task_, std::make_shared<std::function<void(int)>>(nullptr));
     }
 
     void runTask(std::function<void(int)> task, int n_parallel = -1) {
@@ -85,9 +106,11 @@ public:
         std::fill_n(activate.begin(), n_parallel, true);
         // std::fill(activate.begin(), activate.end(), true);
 
-        // the server is also a worker.
-        if (activate[0].load())
-            executeInOneTransaction(0);  // server core_id = 0.
+        if (thread_0_is_worker_) {
+            // the server is also a worker.
+            if (activate[0].load())
+                executeInOneTransaction(0);  // server core_id = 0.
+        }
 
         while (notify_cnt.load() > 0 && !stop.load()) {
             continue;
@@ -127,6 +150,7 @@ public:
 private:
     int n_threads_;
     int start_core_;
+    bool thread_0_is_worker_;
 
     std::atomic_bool stop;
     // check whether the last round is done, and workers are ready for next task

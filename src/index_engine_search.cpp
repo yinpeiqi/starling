@@ -402,7 +402,7 @@ namespace diskann {
 
   template<typename T>
   void IndexEngine<T>::start_io_threads() {
-    io_pool->runTask([&, this](int tid) {
+    io_pool->runTaskAsync([&, this](int tid) {
       // IO context init.
       IOContext& ctx = ctxs[tid + this->max_nthreads];
 

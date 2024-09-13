@@ -105,9 +105,9 @@ namespace diskann {
               this->aligned_dim * sizeof(float));
       scratchs[tid] = scratch;
     });
-    // setup io pool and ctx
-    io_pool = std::make_shared<ThreadPool>(io_threads);
-    pool->runTask([&, this](int tid) {
+    // setup io pool and ctx, start from core-id [nthreads]
+    io_pool = std::make_shared<ThreadPool>(io_threads, nthreads);
+    io_pool->runTask([&, this](int tid) {
       this->io_manager->register_thread();
       ctxs[nthreads + tid] = this->io_manager->get_ctx();
     });
