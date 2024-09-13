@@ -67,9 +67,9 @@ namespace diskann {
     // Pointer to the search path node in the same block.
     // These nodes are execute directly, such that can init the struct here.
     // If a node is not a target, then this field will be empty.
-    std::vector<FrontierNode*> in_blk_;
+    std::vector<std::shared_ptr<FrontierNode>> in_blk_;
     // Neighbors discovered, only executed are recorded.
-    std::vector<FrontierNode*> nb_;
+    std::vector<std::shared_ptr<FrontierNode>> nb_;
 
     FrontierNode(unsigned id, unsigned pid, int fid) {
         this->id = id;

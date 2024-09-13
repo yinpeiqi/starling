@@ -42,7 +42,7 @@ namespace diskann {
       // visited map/set
       tsl::robin_set<_u32> &visited = *(query_scratch->visited);
       tsl::robin_map<_u32, bool>& exact_visited = *(query_scratch->exact_visited);
-      tsl::robin_map<_u32, FrontierNode*> id2ftr; // id 2 frontier
+      tsl::robin_map<_u32, std::shared_ptr<FrontierNode>> id2ftr; // id 2 frontier
       id2ftr.reserve(1024);
 
       // pre-allocated data field for searching
@@ -64,7 +64,7 @@ namespace diskann {
         Timer query_timer, tmp_timer, part_timer;
 
         // record the frontier node, also used to record search path.
-        std::vector<FrontierNode*> frontier;
+        std::vector<std::shared_ptr<FrontierNode>> frontier;
         id2ftr.clear();
         int ftr_id = 0; // frontier id
 
@@ -215,7 +215,7 @@ namespace diskann {
         unsigned k = 0;
 
         // map unfinished sector_buf to the frontier node.
-        tsl::robin_map<char*, FrontierNode*> sec_buf2ftr;
+        tsl::robin_map<char*, std::shared_ptr<FrontierNode>> sec_buf2ftr;
 
         // these data are count seperately
         _u32 n_io_in_q = 0; // how many io left
@@ -253,7 +253,7 @@ namespace diskann {
               exit(-1);
             }
 
-            FrontierNode* fn = sec_buf2ftr[sector_buf];
+            auto fn = sec_buf2ftr[sector_buf];
             _u32 exact_id = fn->id;
             int fid = fn->fid;
             unsigned id, pid, p_size;
@@ -283,7 +283,7 @@ namespace diskann {
                 } else {
                   // IO: notify this link (discovered from block)
                   // replace only the other nodes
-                  FrontierNode* fn = new FrontierNode(id, pid, fid);
+                  auto fn = std::make_shared<FrontierNode>(id, pid, fid);
                   fn->sector_buf = sector_buf;
                   // update the src id's in_blk (neighbors).
                   id2ftr[exact_id]->in_blk_.push_back(fn);
@@ -349,7 +349,7 @@ namespace diskann {
                       }
                     }
                   }
-                  FrontierNode* fn = new FrontierNode(retset[marker].id, pid, fid);
+                  auto fn = std::make_shared<FrontierNode>(retset[marker].id, pid, fid);
                   frontier.push_back(fn);
                   // update id2ftr: from last node's neighbors.
                   if (id2ftr.find(retset[marker].rev_id) != id2ftr.end()) {
