@@ -45,10 +45,10 @@ namespace diskann {
     T *    aligned_query_T = nullptr;
     float *aligned_query_float = nullptr;
 
-    tsl::robin_set<_u64> *visited = nullptr;
-    tsl::robin_set<unsigned> *page_visited = nullptr;
+    tsl::robin_set<_u32> *visited = nullptr;
+    tsl::robin_set<_u32> *page_visited = nullptr;
     // false means in queue, true means executed
-    tsl::robin_map<_u64, bool>* exact_visited = nullptr;
+    tsl::robin_map<_u32, bool>* exact_visited = nullptr;
 
     void reset() {
       sector_idx = 0;
@@ -58,12 +58,20 @@ namespace diskann {
     }
   };
 
-  struct FrontierData {
+  // Node recorded in the search path.
+  struct FrontierNode {
     unsigned id;
     unsigned pid;
     int fid;
+    char* sector_buf;
+    // Pointer to the search path node in the same block.
+    // These nodes are execute directly, such that can init the struct here.
+    // If a node is not a target, then this field will be empty.
+    std::vector<FrontierNode*> in_blk_;
+    // Neighbors discovered, only executed are recorded.
+    std::vector<FrontierNode*> nb_;
 
-    FrontierData(unsigned id, unsigned pid, int fid) {
+    FrontierNode(unsigned id, unsigned pid, int fid) {
         this->id = id;
         this->pid = pid;
         this->fid = fid;

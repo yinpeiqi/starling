@@ -40,17 +40,21 @@ namespace diskann {
       float *dist_scratch = query_scratch->aligned_dist_scratch;
       _u8 *  pq_coord_scratch = query_scratch->aligned_pq_coord_scratch;
       // visited map/set
-      tsl::robin_set<_u64> &visited = *(query_scratch->visited);
-      tsl::robin_map<_u64, bool>& exact_visited = *(query_scratch->exact_visited);
+      tsl::robin_set<_u32> &visited = *(query_scratch->visited);
+      tsl::robin_map<_u32, bool>& exact_visited = *(query_scratch->exact_visited);
+      tsl::robin_map<_u32, FrontierNode*> id2ftr; // id 2 frontier
+      id2ftr.reserve(1024);
 
       // pre-allocated data field for searching
       std::vector<std::pair<_u32, const char*>> vis_cand;
       vis_cand.reserve(20);   // at most researve 12 is enough
       // this is a ring queue for storing sector buffers ptr.
+      // when read done, push a sector_buf to here, wait for execute
       std::vector<char*> sector_buffers(MAX_N_SECTOR_READS);
-      // pre-allocated buffer
+      // pre-allocated buffer, will clear up each iter/step.
       std::vector<char*> tmp_bufs(beam_width * 2);
       std::vector<int> read_fids(beam_width * 2);
+      std::vector<AlignedRead> frontier_read_reqs(beam_width * 2);
       std::vector<unsigned> nbr_buf(max_degree);
       while(true) {
         int i = cur_task++;
@@ -58,6 +62,11 @@ namespace diskann {
           break;
         }
         Timer query_timer, tmp_timer, part_timer;
+
+        // record the frontier node, also used to record search path.
+        std::vector<FrontierNode*> frontier;
+        id2ftr.clear();
+        int ftr_id = 0; // frontier id
 
         // get the current query pointers
         const T* query1 = query_ptr + (i * query_aligned_dim);
@@ -69,7 +78,7 @@ namespace diskann {
         // copy query to thread specific aligned and allocated memory (for distance
         // calculations we need aligned data)
         float query_norm = 0;
-        for (uint32_t i = 0; i < query_dim; i++) {
+        for (_u32 i = 0; i < query_dim; i++) {
           scratch.aligned_query_float[i] = query1[i];
           scratch.aligned_query_T[i] = query1[i];
           query_norm += query1[i] * query1[i];
@@ -80,7 +89,7 @@ namespace diskann {
           query_norm = std::sqrt(query_norm);
           scratch.aligned_query_T[this->data_dim - 1] = 0;
           scratch.aligned_query_float[this->data_dim - 1] = 0;
-          for (uint32_t i = 0; i < this->data_dim - 1; i++) {
+          for (_u32 i = 0; i < this->data_dim - 1; i++) {
             scratch.aligned_query_T[i] /= query_norm;
             scratch.aligned_query_float[i] /= query_norm;
           }
@@ -154,9 +163,9 @@ namespace diskann {
                   (cur_list_size == l_search)) {
                 continue;
               }
-              Neighbor nn(nbor_id, nbor_dist, true);
+              // IO: notify the src node
+              Neighbor nn(nbor_id, nbor_dist, true, src_id);
               // Return position in sorted list where nn inserted
-              // TODO (IO): notify this link
               auto     r = InsertIntoPool(retset.data(), cur_list_size, nn);
               if (cur_list_size < l_search) ++cur_list_size;
               // nk logs the best position in the retset that was updated due to neighbors of n.
@@ -205,12 +214,8 @@ namespace diskann {
         unsigned num_ios = 0;
         unsigned k = 0;
 
-        // cleared every iteration
-        std::vector<FrontierData> frontier;
-        frontier.reserve(2 * beam_width);
-        tsl::robin_map<char*, _u32> frontier_nhoods;
-        std::vector<AlignedRead> frontier_read_reqs;
-        frontier_read_reqs.reserve(2 * beam_width);
+        // map unfinished sector_buf to the frontier node.
+        tsl::robin_map<char*, FrontierNode*> sec_buf2ftr;
 
         // these data are count seperately
         _u32 n_io_in_q = 0; // how many io left
@@ -241,29 +246,50 @@ namespace diskann {
             part_timer.reset();
             auto sector_buf = sector_buffers[botm_bufs_idx];
             botm_bufs_idx = (botm_bufs_idx + 1) % MAX_N_SECTOR_READS;
-            if (frontier_nhoods.find(sector_buf) == frontier_nhoods.end()) {
+            if (sec_buf2ftr.find(sector_buf) == sec_buf2ftr.end()) {
               std::cout << "read error: " << int((sector_buf - sector_scratch) / SECTOR_LEN) \
                         << " " << std::this_thread::get_id() << " " \
                         << n_io_in_q << " " << n_proc_in_q << std::endl;
               exit(-1);
             }
 
-            _u32 exact_id = frontier_nhoods[sector_buf];
-            unsigned pid = id2page_[exact_id];
-            const unsigned p_size = gp_layout_[pid].size();
-            unsigned* node_in_page = gp_layout_[pid].data();
+            FrontierNode* fn = sec_buf2ftr[sector_buf];
+            _u32 exact_id = fn->id;
+            int fid = fn->fid;
+            unsigned id, pid, p_size;
+            unsigned* node_in_page;
+            if (fid == disk_fid) {
+              pid = id2page_[exact_id];
+              p_size = gp_layout_[pid].size();
+              node_in_page = gp_layout_[pid].data();
+            } else if (fid == cache_fid) {
+              pid = id2cache_page_[exact_id];
+              p_size = cache_layout_[pid].size();
+              node_in_page = cache_layout_[pid].data();
+            }
             compute_pq_dists(node_in_page, p_size, dist_scratch);
 
             unsigned cand_size = 0;
             for (unsigned j = 0; j < p_size; ++j) {
-              unsigned id = gp_layout_[pid][j];
+              if (fid == disk_fid) {
+                id = gp_layout_[pid][j];
+              } else if (fid == cache_fid) {
+                id = cache_layout_[pid][j];
+              }
               if (id != exact_id) {
                 if (dist_scratch[j] >= retset[cur_list_size - 1].distance * pq_filter_ratio
                   || exact_visited[id]) {
                     continue;
                 } else {
-                  // TODO (IO): notify this link (discovered)
+                  // IO: notify this link (discovered from block)
                   // replace only the other nodes
+                  FrontierNode* fn = new FrontierNode(id, pid, fid);
+                  fn->sector_buf = sector_buf;
+                  // update the src id's in_blk (neighbors).
+                  id2ftr[exact_id]->in_blk_.push_back(fn);
+                  id2ftr.insert({id, fn});
+                  frontier.push_back(fn);
+                  ftr_id++;
                 }
               }
               char *node_buf = sector_buf + j * max_node_len;
@@ -277,13 +303,12 @@ namespace diskann {
             }
             if (stats != nullptr) stats->disk_proc_us += (double) part_timer.elapsed();
 
-            frontier_nhoods.erase(sector_buf);
+            sec_buf2ftr.erase(sector_buf);
             n_proc_in_q--;
           }
 
           if (n_io_in_q == 0 && n_proc_in_q < beam_width) {
             // clear iteration state
-            frontier.clear();
             frontier_read_reqs.clear();
             read_fids.clear();
             // find new beam
@@ -297,9 +322,12 @@ namespace diskann {
               if (retset[marker].flag) {
                 if (exact_visited.find(retset[marker].id) == exact_visited.end()) {
                   num_seen++;
+                  unsigned pid;
+                  int fid;
                   // use the cached page.
                   if (id2cache_page_.find(retset[marker].id) != id2cache_page_.end()) {
-                    const unsigned pid = id2cache_page_[retset[marker].id];
+                    pid = id2cache_page_[retset[marker].id];
+                    fid = cache_fid;
                     for (unsigned j = 0; j < cache_layout_[pid].size(); ++j) {
                       unsigned id = cache_layout_[pid][j];
                       if (exact_visited.find(id) == exact_visited.end())
@@ -308,10 +336,10 @@ namespace diskann {
                         stats->repeat_read++;
                       }
                     }
-                    frontier.emplace_back(retset[marker].id, pid, cache_fid);
                   }
                   else {
-                    const unsigned pid = id2page_[retset[marker].id];
+                    pid = id2page_[retset[marker].id];
+                    fid = disk_fid;
                     for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
                       unsigned id = gp_layout_[pid][j];
                       if (exact_visited.find(id) == exact_visited.end())
@@ -320,8 +348,14 @@ namespace diskann {
                         stats->repeat_read++;
                       }
                     }
-                    frontier.emplace_back(retset[marker].id, pid, disk_fid);
                   }
+                  FrontierNode* fn = new FrontierNode(retset[marker].id, pid, fid);
+                  frontier.push_back(fn);
+                  // update id2ftr: from last node's neighbors.
+                  if (id2ftr.find(retset[marker].rev_id) != id2ftr.end()) {
+                    id2ftr[retset[marker].rev_id]->nb_.push_back(fn);
+                  }
+                  id2ftr.insert({retset[marker].id, fn});
                 }
                 retset[marker].flag = false;
               }
@@ -331,20 +365,23 @@ namespace diskann {
 
             // read nhoods of frontier ids
             // TODO (IO): let the IO manager to do it
-            if (!frontier.empty()) {
+            if (ftr_id < frontier.size()) {
               part_timer.reset();
               if (stats != nullptr) stats->n_hops++;
-              n_io_in_q += frontier.size();
-              for (_u64 i = 0; i < frontier.size(); i++) {
+              n_io_in_q += frontier.size() - ftr_id;
+              while(ftr_id < frontier.size()) {
+                int i = ftr_id++;
                 auto sector_buf = sector_scratch + sector_scratch_idx * SECTOR_LEN;
                 sector_scratch_idx = (sector_scratch_idx + 1) % MAX_N_SECTOR_READS;
-                auto offset = (static_cast<_u64>(frontier[i].pid)) * SECTOR_LEN;
-                if (frontier[i].fid == disk_fid) {
-                  offset += SECTOR_LEN;
+                auto offset = (static_cast<_u64>(frontier[i]->pid)) * SECTOR_LEN;
+                if (frontier[i]->fid == disk_fid) {
+                  offset += SECTOR_LEN; // one page for metadata
                 }
-                frontier_nhoods.insert({sector_buf, frontier[i].id});
+                sec_buf2ftr.insert({sector_buf, frontier[i]});
                 frontier_read_reqs.push_back(AlignedRead(offset, SECTOR_LEN, sector_buf));
-                read_fids.push_back(frontier[i].fid);
+                read_fids.push_back(frontier[i]->fid);
+                // update sector_buf for the current node.
+                id2ftr[frontier[i]->id]->sector_buf = sector_buf;
                 if (stats != nullptr) {
                   stats->n_4k++;
                   stats->n_ios++;

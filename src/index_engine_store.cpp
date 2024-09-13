@@ -96,9 +96,9 @@ namespace diskann {
       diskann::alloc_aligned((void **) &scratch.aligned_query_float,
                               this->aligned_dim * sizeof(float),
                               8 * sizeof(float));
-      scratch.visited = new tsl::robin_set<_u64>(4096);
-      scratch.page_visited = new tsl::robin_set<unsigned>(1024);
-      scratch.exact_visited = new tsl::robin_map<_u64, bool>(1024);
+      scratch.visited = new tsl::robin_set<_u32>(4096);
+      scratch.page_visited = new tsl::robin_set<_u32>(1024);
+      scratch.exact_visited = new tsl::robin_map<_u32, bool>(1024);
 
       memset(scratch.aligned_query_T, 0, this->aligned_dim * sizeof(T));
       memset(scratch.aligned_query_float, 0,
@@ -489,7 +489,7 @@ namespace diskann {
     std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
     std::ofstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::out | std::ios::trunc);
     _u64 tot_size = this->id2cache_page_.size();
-    assert (tot_size == cache_layout_->size());
+    assert (tot_size == cache_layout_.size());
     cache_part.write((char *) &tot_size, sizeof(_u64));
     for (int i = 0; i < tot_size; i++) {
       unsigned s = cache_layout_[i].size();
