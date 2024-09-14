@@ -109,7 +109,7 @@ namespace diskann {
     io_pool = std::make_shared<ThreadPool>(io_threads, nthreads);
     io_pool->runTask([&, this](int tid) {
       this->io_manager->register_thread();
-      ctxs[nthreads + tid] = this->io_manager->get_ctx();
+      ctxs[tid] = this->io_manager->get_ctx();
     });
 
     load_flag = true;
@@ -454,6 +454,9 @@ namespace diskann {
     }
     // load cache data
     load_disk_cache_data(index_prefix);
+
+    // init freq infos
+    freq_ = std::make_shared<FreqWindowList>(num_points);
 
     diskann::cout << "done.." << std::endl;
     return 0;

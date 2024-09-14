@@ -444,14 +444,26 @@ namespace diskann {
 
   template<typename T>
   void IndexEngine<T>::start_io_threads() {
+    freq_->move();
     io_stop_.store(false);
     io_pool->runTaskAsync([&, this](int tid) {
       // IO context init.
       IOContext& ctx = ctxs[tid + this->max_nthreads];
-      std::vector<std::shared_ptr<FrontierNode>> node_path;
+      std::vector<std::shared_ptr<FrontierNode>> nodes;
       while (true) {
-        if (path_queue_.try_pop(node_path)) {
-          // TODO: do sth.
+        if (path_queue_.try_pop(nodes)) {
+          for (int i = 0; i < nodes.size(); i++) {
+            freq_->add(nodes[i]->id);
+          }
+          // re-sort by neighbor used
+          std::sort(nodes.begin(), nodes.end(),
+            [&](const std::shared_ptr<FrontierNode> left, const std::shared_ptr<FrontierNode> right) {
+            if (left->nb_.size() != right->nb_.size()) {
+              return left->nb_.size() > right->nb_.size();
+            }
+            return freq_->get(left->id) > freq_->get(right->id);
+          });
+          // TODO: do sth, write it to cache!
         } else {
           std::this_thread::yield();
         }

@@ -19,6 +19,7 @@
 #include "index.h"
 #include "pq_flash_index_utils.h"
 #include "thread_pool.h"
+#include "freq_list.h"
 
 #include <tbb/concurrent_queue.h>
 
@@ -219,6 +220,7 @@ namespace diskann {
     int cache_fid;
     tsl::robin_map<_u32, _u32> id2cache_page_;
     std::vector<std::vector<unsigned>> cache_layout_;
+    std::shared_ptr<FreqWindowList> freq_;
 
     // IO thread pool
     tbb::concurrent_queue<std::vector<std::shared_ptr<FrontierNode>>> path_queue_;

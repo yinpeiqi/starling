@@ -123,7 +123,8 @@ public:
     // are in a same transaction.
     void executeInOneTransaction(int tid) {
         assert (task_.get() != nullptr);
-        (*task_)(tid);
+        // To users, the tid should be start from start_core
+        (*task_)(tid + start_core_);
         activate[tid].store(false);
         notify_cnt--;
     }
