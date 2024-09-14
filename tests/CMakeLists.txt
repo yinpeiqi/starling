@@ -16,7 +16,7 @@ add_executable(search_disk_index search_disk_index.cpp)
 target_link_libraries(search_disk_index ${PROJECT_NAME} ${DISKANN_ASYNC_LIB} ${DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS} Boost::program_options)
 
 add_executable(search_disk_index_use_engine search_disk_index_use_engine.cpp)
-target_link_libraries(search_disk_index_use_engine ${PROJECT_NAME} ${DISKANN_ASYNC_LIB} ${DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS} Boost::program_options)
+target_link_libraries(search_disk_index_use_engine ${PROJECT_NAME} ${DISKANN_ASYNC_LIB} ${DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS} tbb Boost::program_options)
 
 add_executable(cal_disk_index_distance cal_disk_index_distance.cpp)
 target_link_libraries(cal_disk_index_distance ${PROJECT_NAME} ${DISKANN_ASYNC_LIB} ${DISKANN_TOOLS_TCMALLOC_LINK_OPTIONS} Boost::program_options)

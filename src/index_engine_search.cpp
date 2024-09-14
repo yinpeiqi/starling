@@ -21,6 +21,7 @@ namespace diskann {
 
     uint32_t query_dim = metric == diskann::Metric::INNER_PRODUCT ? this-> data_dim - 1: this-> data_dim;
 
+    start_io_threads();
     // atomic pointer to query.
     std::atomic_int cur_task = 0;
     // parallel for
@@ -65,7 +66,6 @@ namespace diskann {
 
         // record the frontier node, also used to record search path.
         std::vector<std::shared_ptr<FrontierNode>> frontier;
-        id2ftr.clear();
         int ftr_id = 0; // frontier id
 
         // get the current query pointers
@@ -364,29 +364,29 @@ namespace diskann {
             if (stats != nullptr) stats->dispatch_us += (double) part_timer.elapsed();
 
             // read nhoods of frontier ids
-            // TODO (IO): let the IO manager to do it
+            // TODO (IO): let the IO manager to do it (maybe don't need do it first)
             if (ftr_id < frontier.size()) {
               part_timer.reset();
               if (stats != nullptr) stats->n_hops++;
               n_io_in_q += frontier.size() - ftr_id;
               while(ftr_id < frontier.size()) {
-                int i = ftr_id++;
                 auto sector_buf = sector_scratch + sector_scratch_idx * SECTOR_LEN;
                 sector_scratch_idx = (sector_scratch_idx + 1) % MAX_N_SECTOR_READS;
-                auto offset = (static_cast<_u64>(frontier[i]->pid)) * SECTOR_LEN;
-                if (frontier[i]->fid == disk_fid) {
+                auto offset = (static_cast<_u64>(frontier[ftr_id]->pid)) * SECTOR_LEN;
+                if (frontier[ftr_id]->fid == disk_fid) {
                   offset += SECTOR_LEN; // one page for metadata
                 }
-                sec_buf2ftr.insert({sector_buf, frontier[i]});
+                sec_buf2ftr.insert({sector_buf, frontier[ftr_id]});
                 frontier_read_reqs.push_back(AlignedRead(offset, SECTOR_LEN, sector_buf));
-                read_fids.push_back(frontier[i]->fid);
+                read_fids.push_back(frontier[ftr_id]->fid);
                 // update sector_buf for the current node.
-                id2ftr[frontier[i]->id]->sector_buf = sector_buf;
+                id2ftr[frontier[ftr_id]->id]->sector_buf = sector_buf;
                 if (stats != nullptr) {
                   stats->n_4k++;
                   stats->n_ios++;
                 }
                 num_ios++;
+                ftr_id++;
               }
               io_manager->submit_reqs(frontier_read_reqs, read_fids, ctx);
               if (stats != nullptr) stats->read_disk_us += (double) part_timer.elapsed();
@@ -433,21 +433,40 @@ namespace diskann {
           stats->total_us = (double) query_timer.elapsed();
           stats->postprocess_us = (double) tmp_timer.elapsed();
         }
+        // better clear here.
+        id2ftr.clear();
+        path_queue_.push(frontier);
+        // TODO: parse the vector<Frontier> to IO threads using concurrent queue.
+      }
+    });
+    stop_io_threads();
+  }
+
+  template<typename T>
+  void IndexEngine<T>::start_io_threads() {
+    io_stop_.store(false);
+    io_pool->runTaskAsync([&, this](int tid) {
+      // IO context init.
+      IOContext& ctx = ctxs[tid + this->max_nthreads];
+      std::vector<std::shared_ptr<FrontierNode>> node_path;
+      while (true) {
+        if (path_queue_.try_pop(node_path)) {
+          // TODO: do sth.
+        } else {
+          std::this_thread::yield();
+        }
+        // stop the thread pool
+        if (io_stop_.load()) {
+          break;
+        }
       }
     });
   }
 
   template<typename T>
-  void IndexEngine<T>::start_io_threads() {
-    io_pool->runTaskAsync([&, this](int tid) {
-      // IO context init.
-      IOContext& ctx = ctxs[tid + this->max_nthreads];
-
-      while (true) {
-        
-      }
-
-    });
+  void IndexEngine<T>::stop_io_threads() {
+    io_stop_.store(true);
+    io_pool->endTaskAsync();
   }
 
   template class IndexEngine<_u8>;

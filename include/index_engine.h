@@ -10,7 +10,6 @@
 #include "tsl/robin_set.h"
 
 #include "file_io_manager.h"
-#include "concurrent_queue.h"
 #include "neighbor.h"
 #include "parameters.h"
 #include "percentile_stats.h"
@@ -20,6 +19,8 @@
 #include "index.h"
 #include "pq_flash_index_utils.h"
 #include "thread_pool.h"
+
+#include <tbb/concurrent_queue.h>
 
 #define MAX_GRAPH_DEGREE 512
 #define MAX_N_CMPS 16384
@@ -67,6 +68,8 @@ namespace diskann {
     // Pointer to the search path node in the same block.
     // These nodes are execute directly, such that can init the struct here.
     // If a node is not a target, then this field will be empty.
+    // We need shared_ptr here, otherwise memory leak will occur since
+    // ptr are not correctly release.
     std::vector<std::shared_ptr<FrontierNode>> in_blk_;
     // Neighbors discovered, only executed are recorded.
     std::vector<std::shared_ptr<FrontierNode>> nb_;
@@ -121,6 +124,7 @@ namespace diskann {
     DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads, _u64 io_threads);
     DISKANN_DLLEXPORT void destroy_thread_data();
     DISKANN_DLLEXPORT void start_io_threads();
+    DISKANN_DLLEXPORT void stop_io_threads();
 
    private:
     // index info
@@ -215,6 +219,10 @@ namespace diskann {
     int cache_fid;
     tsl::robin_map<_u32, _u32> id2cache_page_;
     std::vector<std::vector<unsigned>> cache_layout_;
+
+    // IO thread pool
+    tbb::concurrent_queue<std::vector<std::shared_ptr<FrontierNode>>> path_queue_;
+    std::atomic_bool io_stop_;
 
 #ifdef EXEC_ENV_OLS
     // Set to a larger value than the actual header to accommodate
