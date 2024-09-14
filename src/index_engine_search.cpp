@@ -464,6 +464,10 @@ namespace diskann {
             return freq_->get(left->id) > freq_->get(right->id);
           });
           // TODO: do sth, write it to cache!
+          std::cout << nodes.size() << std::endl;
+          for (int i = 0; i < 30; i++) {
+            std::cout << nodes[i]->id << " " << nodes[i]->pid << " " << nodes[i]->nb_.size() << " " << freq_->get(nodes[i]->id) << std::endl;
+          }
         } else {
           std::this_thread::yield();
         }
