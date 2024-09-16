@@ -58,9 +58,14 @@ T_LIST=(8)
 CACHE=0
 MEM_L=0 # non-zero to enable
 
+USE_ENGINE=0 # whether use search engine
+USE_CACHE=0
+IO_T=0
+
 # Page Search
 USE_PAGE_SEARCH=1 # Set 0 for beam search, 1 for page search (default)
-PS_USE_RATIO=1.0
+PS_USE_RATIO=0.3
+PQ_FILTER_RATIO=1.2
 
 # KNN
 LS="100"

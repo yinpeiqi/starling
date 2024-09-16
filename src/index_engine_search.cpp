@@ -21,7 +21,9 @@ namespace diskann {
 
     uint32_t query_dim = metric == diskann::Metric::INNER_PRODUCT ? this-> data_dim - 1: this-> data_dim;
 
-    start_io_threads();
+    if (use_cache) {
+      start_io_threads();
+    }
     // atomic pointer to query.
     std::atomic_int cur_task = 0;
     // parallel for
@@ -58,7 +60,7 @@ namespace diskann {
       std::vector<AlignedRead> frontier_read_reqs(beam_width * 2);
       std::vector<unsigned> nbr_buf(max_degree);
       while(true) {
-        int i = cur_task++;
+        size_t i = cur_task++;
         if (i >= query_num) {
           break;
         }
@@ -66,7 +68,7 @@ namespace diskann {
 
         // record the frontier node, also used to record search path.
         std::vector<std::shared_ptr<FrontierNode>> frontier;
-        int ftr_id = 0; // frontier id
+        size_t ftr_id = 0; // frontier id
 
         // get the current query pointers
         const T* query1 = query_ptr + (i * query_aligned_dim);
@@ -254,8 +256,8 @@ namespace diskann {
             }
 
             auto fn = sec_buf2ftr[sector_buf];
-            _u32 exact_id = fn->id;
-            int fid = fn->fid;
+            const _u32 exact_id = fn->id;
+            const int fid = fn->fid;
             unsigned id, pid, p_size;
             unsigned* node_in_page;
             if (fid == disk_fid) {
@@ -266,6 +268,9 @@ namespace diskann {
               pid = id2cache_page_[exact_id];
               p_size = cache_layout_[pid].size();
               node_in_page = cache_layout_[pid].data();
+            } else {
+              std::cerr << "wrong fid: " << fid << std::endl;
+              exit(0);
             }
             compute_pq_dists(node_in_page, p_size, dist_scratch);
 
@@ -435,11 +440,14 @@ namespace diskann {
         }
         // better clear here.
         id2ftr.clear();
-        path_queue_.push(frontier);
-        // TODO: parse the vector<Frontier> to IO threads using concurrent queue.
+        if (use_cache) {
+          path_queue_.push(frontier);
+        }
       }
     });
-    stop_io_threads();
+    if (use_cache) {
+      stop_io_threads();
+    }
   }
 
   template<typename T>
@@ -452,7 +460,7 @@ namespace diskann {
       std::vector<std::shared_ptr<FrontierNode>> nodes;
       while (true) {
         if (path_queue_.try_pop(nodes)) {
-          for (int i = 0; i < nodes.size(); i++) {
+          for (size_t i = 0; i < nodes.size(); i++) {
             freq_->add(nodes[i]->id);
           }
           // re-sort by neighbor used

@@ -99,7 +99,7 @@ namespace diskann {
                                uint32_t num_threads, const char *index_prefix);
 #else
     // load compressed data, and obtains the handle to the disk-resident index
-    DISKANN_DLLEXPORT int load(uint32_t num_threads, const char *index_prefix,
+    DISKANN_DLLEXPORT int load(uint32_t num_threads, uint32_t io_threads, bool use_cache, const char *index_prefix,
         const std::string& disk_index_path);
 #endif
 
@@ -216,6 +216,7 @@ namespace diskann {
     std::vector<std::vector<unsigned>> gp_layout_;
 
     // disk cache
+    bool use_cache;
     int disk_fid;
     int cache_fid;
     tsl::robin_map<_u32, _u32> id2cache_page_;

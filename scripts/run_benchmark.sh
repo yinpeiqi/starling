@@ -288,7 +288,9 @@ case $2 in
                 --use_page_search ${USE_PAGE_SEARCH} \
                 --pq_ratio ${PQ_FILTER_RATIO} \
                 --disk_file_path ${DISK_FILE_PATH} \
-                --use_sq ${USE_SQ}       > ${SEARCH_LOG}" 
+                --use_sq ${USE_SQ} \
+                --io_T ${IO_T} \
+                --use_cache ${USE_CACHE}       > ${SEARCH_LOG}" 
               log_arr+=( ${SEARCH_LOG} )
             else
               gdb ${EXE_PATH}/tests/search_disk_index -ex "run --data_type $DATA_TYPE \
@@ -337,7 +339,9 @@ case $2 in
                 --use_page_search ${USE_PAGE_SEARCH} \
                 --pq_ratio ${PQ_FILTER_RATIO} \
                 --disk_file_path ${DISK_FILE_PATH} \
-                --use_sq ${USE_SQ}       > ${SEARCH_LOG} 
+                --use_sq ${USE_SQ} \
+                --io_T ${IO_T} \
+                --use_cache ${USE_CACHE}       > ${SEARCH_LOG} 
               log_arr+=( ${SEARCH_LOG} )
             else
               sync; echo 3 | sudo tee /proc/sys/vm/drop_caches; ${EXE_PATH}/tests/search_disk_index --data_type $DATA_TYPE \

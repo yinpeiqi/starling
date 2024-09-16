@@ -150,12 +150,12 @@ public:
 
 private:
     int n_threads_;
+    // check whether the last round is done, and workers are ready for next task
+    std::atomic_int notify_cnt;
+    std::atomic_bool stop;
     int start_core_;
     bool thread_0_is_worker_;
 
-    std::atomic_bool stop;
-    // check whether the last round is done, and workers are ready for next task
-    std::atomic_int notify_cnt;
     std::vector<std::thread> workers;
 
     std::vector<AtomicWrapper<bool>> activate;

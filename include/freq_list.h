@@ -34,11 +34,11 @@ namespace diskann {
 
   struct FreqWindowList {
     std::vector<FreqWindow> freq_window;
-    uint16_t idx;
     uint32_t n_nodes;
+    uint16_t idx;
 
     FreqWindowList(int n) : n_nodes(n), idx(0) {
-      for (int i = 0; i < n_nodes; i++) {
+      for (uint32_t i = 0; i < n_nodes; i++) {
         freq_window.emplace_back();
       }
     }
@@ -53,7 +53,7 @@ namespace diskann {
 
     void move() {
       uint16_t nxt_idx = (idx + 1) % 4;
-      for (int i = 0; i < n_nodes; i++) {
+      for (uint32_t i = 0; i < n_nodes; i++) {
         freq_window[i].move(idx, nxt_idx);
       }
       idx = nxt_idx;

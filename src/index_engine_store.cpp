@@ -106,11 +106,13 @@ namespace diskann {
       scratchs[tid] = scratch;
     });
     // setup io pool and ctx, start from core-id [nthreads]
-    io_pool = std::make_shared<ThreadPool>(io_threads, nthreads);
-    io_pool->runTask([&, this](int tid) {
-      this->io_manager->register_thread();
-      ctxs[tid] = this->io_manager->get_ctx();
-    });
+    if (use_cache) {
+      io_pool = std::make_shared<ThreadPool>(io_threads, nthreads);
+      io_pool->runTask([&, this](int tid) {
+        this->io_manager->register_thread();
+        ctxs[tid] = this->io_manager->get_ctx();
+      });
+    }
 
     load_flag = true;
   }
@@ -196,8 +198,10 @@ namespace diskann {
                             const char *index_prefix) {
 #else
   template<typename T>
-  int IndexEngine<T>::load(uint32_t num_threads, const char *index_prefix, const std::string& disk_index_path) {
+  int IndexEngine<T>::load(uint32_t num_threads, uint32_t io_threads, bool use_c,
+                           const char *index_prefix, const std::string& disk_index_path) {
 #endif
+    this->use_cache = use_c;
     std::string pq_table_bin = std::string(index_prefix) + "_pq_pivots.bin";
     std::string pq_compressed_vectors =
         std::string(index_prefix) + "_pq_compressed.bin";
@@ -378,7 +382,7 @@ namespace diskann {
     std::string index_fname(disk_index_file);
     this->disk_fid = io_manager->open(index_fname, O_DIRECT | O_RDONLY | O_LARGEFILE);
     this->max_nthreads = num_threads;
-    this->n_io_nthreads = 1;
+    this->n_io_nthreads = io_threads;
     this->setup_thread_data(num_threads, this->n_io_nthreads);
 
 #endif
@@ -452,11 +456,13 @@ namespace diskann {
                 << this->max_base_norm << std::endl;
       delete[] norm_val;
     }
-    // load cache data
-    load_disk_cache_data(index_prefix);
 
-    // init freq infos
-    freq_ = std::make_shared<FreqWindowList>(num_points);
+    // load cache data
+    if (use_cache) {
+      load_disk_cache_data(index_prefix);
+      // init freq infos
+      freq_ = std::make_shared<FreqWindowList>(num_points);
+    }
 
     diskann::cout << "done.." << std::endl;
     return 0;
@@ -471,14 +477,14 @@ namespace diskann {
       std::ifstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::in);
       _u64          partition_nums;
       cache_part.read((char *) &partition_nums, sizeof(_u64));
-      for (int i = 0; i < partition_nums; i++) {
+      for (_u64 i = 0; i < partition_nums; i++) {
         unsigned s;
         cache_part.read((char *) &s, sizeof(unsigned));
         this->cache_layout_[i].resize(s);
         cache_part.read((char *) cache_layout_[i].data(), sizeof(unsigned) * s);
       }
       _u32 node_id, page_id;
-      for (int i = 0; i < partition_nums; i++) {
+      for (_u64 i = 0; i < partition_nums; i++) {
         cache_part.read((char *) &node_id, sizeof(_u32));
         cache_part.read((char *) &page_id, sizeof(_u32));
         this->id2cache_page_.insert({node_id, page_id});
@@ -494,7 +500,7 @@ namespace diskann {
     _u64 tot_size = this->id2cache_page_.size();
     assert (tot_size == cache_layout_.size());
     cache_part.write((char *) &tot_size, sizeof(_u64));
-    for (int i = 0; i < tot_size; i++) {
+    for (_u64 i = 0; i < tot_size; i++) {
       unsigned s = cache_layout_[i].size();
       cache_part.write((char *) &s, sizeof(_u64));
       cache_part.write((char *) cache_layout_[i].data(), sizeof(unsigned) * s);
