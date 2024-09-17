@@ -21,7 +21,7 @@ namespace diskann {
 
     uint32_t query_dim = metric == diskann::Metric::INNER_PRODUCT ? this-> data_dim - 1: this-> data_dim;
 
-    if (use_cache) {
+    if (n_io_nthreads > 0) {
       start_io_threads();
     }
     // atomic pointer to query.
@@ -258,14 +258,13 @@ namespace diskann {
             auto fn = sec_buf2ftr[sector_buf];
             const _u32 exact_id = fn->id;
             const int fid = fn->fid;
-            unsigned id, pid, p_size;
+            const int pid = fn->pid;
+            unsigned id, p_size;
             unsigned* node_in_page;
             if (fid == disk_fid) {
-              pid = id2page_[exact_id];
               p_size = gp_layout_[pid].size();
               node_in_page = gp_layout_[pid].data();
             } else if (fid == cache_fid) {
-              pid = id2cache_page_[exact_id];
               p_size = cache_layout_[pid].size();
               node_in_page = cache_layout_[pid].data();
             } else {
@@ -290,13 +289,18 @@ namespace diskann {
                   // replace only the other nodes
                   auto fn = std::make_shared<FrontierNode>(id, pid, fid);
                   fn->sector_buf = sector_buf;
+                  fn->node_buf = sector_buf + j * max_node_len;
                   // update the src id's in_blk (neighbors).
                   id2ftr[exact_id]->in_blk_.push_back(fn);
                   id2ftr.insert({id, fn});
                   frontier.push_back(fn);
                   ftr_id++;
                 }
+              } else {
+                auto fn = id2ftr[id];
+                fn->node_buf = sector_buf + j * max_node_len;
               }
+
               char *node_buf = sector_buf + j * max_node_len;
               _mm_prefetch((char *) node_buf, _MM_HINT_T0);
               compute_exact_dists_and_push(node_buf, id);
@@ -369,7 +373,7 @@ namespace diskann {
             if (stats != nullptr) stats->dispatch_us += (double) part_timer.elapsed();
 
             // read nhoods of frontier ids
-            // TODO (IO): let the IO manager to do it (maybe don't need do it first)
+            // TODO (IO): let the IO manager to do it (maybe don't need do it first)?
             if (ftr_id < frontier.size()) {
               part_timer.reset();
               if (stats != nullptr) stats->n_hops++;
@@ -393,7 +397,7 @@ namespace diskann {
                 num_ios++;
                 ftr_id++;
               }
-              io_manager->submit_reqs(frontier_read_reqs, read_fids, ctx);
+              io_manager->submit_read_reqs(frontier_read_reqs, read_fids, ctx);
               if (stats != nullptr) stats->read_disk_us += (double) part_timer.elapsed();
             }
             nk = cur_list_size;
@@ -440,12 +444,14 @@ namespace diskann {
         }
         // better clear here.
         id2ftr.clear();
-        if (use_cache) {
+        if (n_io_nthreads > 0) {
           path_queue_.push(frontier);
+        } else {
+          frontier.clear();
         }
       }
     });
-    if (use_cache) {
+    if (n_io_nthreads > 0) {
       stop_io_threads();
     }
   }
@@ -456,8 +462,11 @@ namespace diskann {
     io_stop_.store(false);
     io_pool->runTaskAsync([&, this](int tid) {
       // IO context init.
-      IOContext& ctx = ctxs[tid + this->max_nthreads];
+      IOContext& ctx = w_ctxs[tid];
+      char* write_sector_scratch = disk_write_buffer[tid];
       std::vector<std::shared_ptr<FrontierNode>> nodes;
+      double save_ratio = 0.1;
+
       while (true) {
         if (path_queue_.try_pop(nodes)) {
           for (size_t i = 0; i < nodes.size(); i++) {
@@ -471,11 +480,169 @@ namespace diskann {
             }
             return freq_->get(left->id) > freq_->get(right->id);
           });
-          // TODO: do sth, write it to cache!
-          std::cout << nodes.size() << std::endl;
-          for (int i = 0; i < 30; i++) {
-            std::cout << nodes[i]->id << " " << nodes[i]->pid << " " << nodes[i]->nb_.size() << " " << freq_->get(nodes[i]->id) << std::endl;
+
+          int save_num = std::min((int)((double)nodes.size() * save_ratio), MAX_N_SECTOR_WRITE);
+          // write offsets and buffer address, file id.
+          std::vector<AlignedWrite> write_reqs;
+          std::vector<int> write_fids;
+          // ID to pid mapping for new layouts, and new layout to append.
+          std::vector<std::pair<_u32, _u32>> new_id2pids;
+          std::vector<std::vector<_u32>> new_layouts;
+          int saved_cnt = 0;
+          _u64 marker = 0;
+          while (saved_cnt < save_num && marker < nodes.size()) {
+            // the id and nodebuf for the new layout.
+            std::vector<unsigned> new_layout;
+            std::vector<char*> layout_nodebufs;
+            _u32 pid = nodes[marker]->pid;
+            new_layout.push_back(nodes[marker]->id);
+            layout_nodebufs.push_back(nodes[marker]->node_buf);
+            // nodes can be kicked out.
+            std::vector<unsigned> node_kick_out;
+            std::vector<char*> kick_out_nodebuf;
+            if (nodes[marker]->fid == disk_fid) {
+              // record the neighbors of the node.
+              tsl::robin_set<unsigned> nb_set;
+              unsigned *node_nbrs = OFFSET_TO_NODE_NHOOD(nodes[marker]->node_buf);
+              unsigned nnbrs = *(node_nbrs++);
+              for (unsigned m = 0; m < nnbrs; ++m) {
+                nb_set.insert(node_nbrs[m]);
+              }
+              for (unsigned m = 0; m < nodes[marker]->in_blk_.size(); ++m) {
+                nb_set.insert(nodes[marker]->in_blk_[m]->id);
+              }
+              // check whether there are neighbors or in block, if so continue.
+              for (_u64 j = 0; j < gp_layout_[pid].size(); j++) {
+                if (gp_layout_[pid][j] == nodes[marker]->id) {
+                  continue;
+                } else if (nb_set.find(gp_layout_[pid][j]) != nb_set.end()) {
+                  // find a neighbor in gp block.
+                  // TODO: how to replace the original nodes?
+                  new_layout.push_back(gp_layout_[pid][j]);
+                  layout_nodebufs.push_back(nodes[marker]->sector_buf + j * max_node_len);
+                } else {
+                  node_kick_out.push_back(gp_layout_[pid][j]);
+                  kick_out_nodebuf.push_back(nodes[marker]->sector_buf + j * max_node_len);
+                }
+              }
+              // the block already filled with neighbors, don't consider it now.
+              if (new_layout.size() == this->nnodes_per_sector) {
+                marker++;
+                continue;
+              }
+            } else {
+              // record the neighbors of the node.
+              tsl::robin_set<unsigned> nb_set;
+              unsigned *node_nbrs = OFFSET_TO_NODE_NHOOD(nodes[marker]->node_buf);
+              unsigned nnbrs = *(node_nbrs++);
+              for (unsigned m = 0; m < nnbrs; ++m) {
+                nb_set.insert(node_nbrs[m]);
+              }
+              for (unsigned m = 0; m < nodes[marker]->in_blk_.size(); ++m) {
+                nb_set.insert(nodes[marker]->in_blk_[m]->id);
+              }
+              // I think the first node should be nid, so here we can just start from 1?
+              for (_u64 j = 1; j < cache_layout_[pid].size(); j++) {
+                if (nb_set.find(cache_layout_[pid][j]) != nb_set.end()) {
+                  // find a neighbor in gp block.
+                  // TODO: how to replace the original nodes?
+                  new_layout.push_back(cache_layout_[pid][j]);
+                  layout_nodebufs.push_back(nodes[marker]->sector_buf + j * max_node_len);
+                } else {
+                  node_kick_out.push_back(cache_layout_[pid][j]);
+                  kick_out_nodebuf.push_back(nodes[marker]->sector_buf + j * max_node_len);
+                }
+              }
+              // the block already filled with neighbors, don't consider it now.
+              if (new_layout.size() == this->nnodes_per_sector) {
+                marker++;
+                continue;
+              }
+            }
+            // to insert the newly discovered neighbors.
+            for (_u64 j = 0; j < nodes[marker]->nb_.size(); j++) {
+              if (new_layout.size() < this->nnodes_per_sector) {
+                auto nb = nodes[marker]->nb_[j];
+                if (nb->node_buf == nullptr) {  // don't know whether it will trigger
+                  std::cout << "error node buf!" << std::endl;
+                  exit(0);
+                }
+                new_layout.push_back(nb->id);
+                layout_nodebufs.push_back(nb->node_buf);
+              } else {
+                // TODO: how to replace?
+                break;
+              }
+            }
+            // fill the block with kicked out nodes in original block.
+            for (_u64 j = 0; j < node_kick_out.size(); j++) {
+              if (new_layout.size() < this->nnodes_per_sector) {
+                new_layout.push_back(node_kick_out[j]);
+                layout_nodebufs.push_back(kick_out_nodebuf[j]);
+              } else {
+                break;
+              }
+            }
+            // copy data to write buffer
+            char* write_buf = write_sector_scratch + saved_cnt * SECTOR_LEN;
+            memset(write_buf, 0, SECTOR_LEN);
+            for (_u64 w_idx = 0; w_idx < new_layout.size(); w_idx++) {
+              memcpy(write_buf + w_idx * max_node_len,
+                     layout_nodebufs[w_idx], max_node_len);
+            }
+            // write the buffer data to SSD
+            // Here is the case cache not full.
+            if (cur_page_id.load() < tot_cache_page) {
+              int w_cache_pid = cur_page_id++;
+              // in case concurrent error occurs, since the operation is not atomic.
+              if (w_cache_pid >= tot_cache_page) {
+                // TODO: do something, disk cache is full.
+              }
+              auto offset = (static_cast<_u64>(w_cache_pid)) * SECTOR_LEN;
+              write_reqs.push_back(AlignedWrite(offset, SECTOR_LEN, write_buf));
+              write_fids.push_back(cache_fid);
+              // for update cache data.
+              new_id2pids.emplace_back(nodes[marker]->id, w_cache_pid);
+              new_layouts.push_back(new_layout);
+              saved_cnt++;
+            } else {
+              // TODO: disk cache is full.
+              // std::cout << "disk cache full" << std::endl;
+            }
+            marker++;
           }
+          // submit write req and get result.
+          int n_ops = io_manager->submit_write_reqs(write_reqs, write_fids, ctx);
+          io_manager->get_events(ctx, n_ops);
+          // TODO: update cache layout and id2cachepage. Using lock.
+          // TODO (Question): how to fix consistency problem?
+          std::unique_lock<std::mutex> lk(cache_upt_lock);
+          // std::cout << "write page: " << new_id2pids.size() << std::endl;
+          for (size_t i = 0; i < new_id2pids.size(); i++) {
+            auto nid = new_id2pids[i].first;
+            auto cache_pid = new_id2pids[i].second;
+            if (id2cache_page_.find(nid) != id2cache_page_.end()) {
+              // TODO: write to a cache file, existance.
+              if (cache_pid == cache_layout_.size()) {  // append one
+                cache_layout_.push_back(new_layouts[i]);
+                id2cache_page_[nid] = cache_pid;
+              } else {
+                // TODO
+              }
+            } else {
+              if (cache_pid == cache_layout_.size()) {  // append one
+                cache_layout_.push_back(new_layouts[i]);
+                id2cache_page_.insert({nid, cache_pid});
+              } else {
+                // TODO: write to a existance page, not support now.
+                // std::cout << "cache pid not filled" << std::endl;
+              }
+            }
+          }
+          lk.unlock();
+
+          // release memory space.
+          nodes.clear();
         } else {
           std::this_thread::yield();
         }

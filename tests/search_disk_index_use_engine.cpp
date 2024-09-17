@@ -57,7 +57,8 @@ int search_disk_index_use_engine(
     const bool use_reorder_data = false,
     const bool use_sq = false,
     const _u32 io_threads = 1,
-    const bool use_cache = true) {
+    const bool use_cache = true,
+    const float cache_scale = 1.0) {
   diskann::cout << "Search parameters: #threads: " << num_threads << ", ";
   if (beamwidth <= 0)
     diskann::cout << "beamwidth to be optimized for each L value" << std::flush;
@@ -100,11 +101,15 @@ int search_disk_index_use_engine(
   std::unique_ptr<diskann::IndexEngine<T>> _index_engine(
       new diskann::IndexEngine<T>(reader, metric));
 
-  int res = _index_engine->load(num_threads, io_threads, use_cache, index_path_prefix.c_str(), disk_file_path);
+  int res = _index_engine->load(num_threads, index_path_prefix.c_str(), disk_file_path);
+
+  res += _index_engine->init_disk_cache(io_threads, use_cache, cache_scale, index_path_prefix.c_str());
 
   if (res != 0) {
     return res;
   }
+
+  
 
   size_t load_mem = getCurrentRSS();
 
@@ -271,10 +276,6 @@ int search_disk_index_use_engine(
         stats, query_num,
         [](const diskann::QueryStats& stats) { return stats.check_visited; });
 
-    auto mean_num_check_insert = diskann::get_mean_stats<float>(
-        stats, query_num,
-        [](const diskann::QueryStats& stats) { return stats.insert_visited_us; });
-
     float recall = 0;
     if (calc_recall_flag) {
       recall = diskann::calculate_recall(query_num, gt_ids, gt_dists, gt_dim,
@@ -347,6 +348,7 @@ int main(int argc, char** argv) {
   bool                  use_page_search = true;
   float                 use_ratio = 1.0;
   float                 pq_ratio = 1.0;
+  float                 cache_scale = 1.0;
   bool use_sq = false;
   unsigned io_threads;
   bool use_cache;
@@ -413,8 +415,9 @@ int main(int argc, char** argv) {
                        "The prefix path of the mem_index");
     desc.add_options()("use_cache", po::value<bool>(&use_cache)->default_value(1),
                        "whether use cache");
-    desc.add_options()(
-        "io_threads,io_T",
+    desc.add_options()("cache_scale", po::value<float>(&cache_scale)->default_value(1.0f),
+                       "The cache scale (1x by default)");
+    desc.add_options()("io_threads,io_T",
         po::value<uint32_t>(&io_threads)->default_value(1),
         "Number of threads used for IO");
 
@@ -475,24 +478,20 @@ int main(int argc, char** argv) {
 
   try {
     if (data_type == std::string("float"))
-      return search_disk_index_use_engine<float>(metric, index_path_prefix,
-                                      mem_index_path,
-                                      result_path_prefix, query_file, gt_file,
-                                      disk_file_path,
-                                      num_threads, K, W, num_nodes_to_cache,
-                                      search_io_limit, Lvec, mem_L, use_page_search, pq_ratio, use_reorder_data, use_sq, io_threads, use_cache);
+      return search_disk_index_use_engine<float>(
+        metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
+        disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
+        use_page_search, pq_ratio, use_reorder_data, use_sq, io_threads, use_cache, cache_scale);
     else if (data_type == std::string("int8"))
-      return search_disk_index_use_engine<int8_t>(metric, index_path_prefix,
-                                       mem_index_path,
-                                       result_path_prefix, query_file, gt_file,
-                                       disk_file_path,
-                                       num_threads, K, W, num_nodes_to_cache,
-                                       search_io_limit, Lvec, mem_L, use_page_search, pq_ratio, use_reorder_data, use_sq, io_threads, use_cache);
+      return search_disk_index_use_engine<int8_t>(
+        metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
+        disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
+        use_page_search, pq_ratio, use_reorder_data, use_sq, io_threads, use_cache, cache_scale);
     else if (data_type == std::string("uint8"))
       return search_disk_index_use_engine<uint8_t>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, pq_ratio, use_reorder_data, use_sq, io_threads, use_cache);
+          use_page_search, pq_ratio, use_reorder_data, use_sq, io_threads, use_cache, cache_scale);
     else {
       std::cerr << "Unsupported data type. Use float or int8 or uint8"
                 << std::endl;

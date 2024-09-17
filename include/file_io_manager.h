@@ -36,7 +36,9 @@ class FileIOManager {
   // NOTE :: blocking call
   void read(std::vector<AlignedRead>& read_reqs, IOContext& ctx,
                     int fid = 0);
-  int submit_reqs(std::vector<AlignedRead>& read_reqs, 
+  int submit_read_reqs(std::vector<AlignedRead>& read_reqs, 
+                          std::vector<int> &fids, IOContext& ctx);
+  int submit_write_reqs(std::vector<AlignedWrite>& write_reqs, 
                           std::vector<int> &fids, IOContext& ctx);
   void get_events(IOContext &ctx, int n_ops);
   int get_events(IOContext& ctx, int min_r, int max_r, std::vector<char*>& ofts);

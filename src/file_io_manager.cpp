@@ -201,7 +201,7 @@ void FileIOManager::read(std::vector<AlignedRead> &read_reqs,
   execute_io(ctx, this->fds[fid], read_reqs);
 }
 
-int FileIOManager::submit_reqs(std::vector<AlignedRead> &read_reqs,
+int FileIOManager::submit_read_reqs(std::vector<AlignedRead> &read_reqs,
                                         std::vector<int> &fids,
                                         io_context_t &ctx) {
   // assert(this->file_desc != -1);
@@ -219,7 +219,42 @@ int FileIOManager::submit_reqs(std::vector<AlignedRead> &read_reqs,
                   read_reqs[j].offset);
   }
   for (int i = 0; i < n_ops; i++) {
+    // here annotate the read_req buffer, used in get_event.
     cb[i].data = (void*) read_reqs[i].buf;
+    cbs[i] = cb.data() + i;
+  }
+
+  int ret = io_submit(ctx, (int64_t) n_ops, cbs.data());
+  if (ret != n_ops) {
+    std::cerr << "io_submit() failed; returned " << ret
+              << ", expected=" << n_ops << ", ernno=" << errno << "="
+              << ::strerror(-ret);
+    std::cout << "ctx: " << ctx << "\n";
+    exit(-1);
+  }
+  return n_ops;
+}
+
+int FileIOManager::submit_write_reqs(std::vector<AlignedWrite> &write_reqs,
+                                        std::vector<int> &fids,
+                                        io_context_t &ctx) {
+  // assert(this->file_desc != -1);
+
+  if (write_reqs.size() > MAX_EVENTS) {
+    std::cerr << "The number of requests should not exceed " << MAX_EVENTS << std::endl;
+    exit(-1);
+  }
+  int n_ops = write_reqs.size();
+  std::vector<iocb_t *>    cbs(n_ops, nullptr);
+  std::vector<struct iocb> cb(n_ops);
+  for (int j = 0; j < n_ops; j++) {
+    io_prep_pwrite(cb.data() + j, this->fds[fids[j]], write_reqs[j].buf,
+                  write_reqs[j].len,
+                  write_reqs[j].offset);
+  }
+  for (int i = 0; i < n_ops; i++) {
+    // here annotate the read_req buffer, used in get_event.
+    cb[i].data = (void*) write_reqs[i].buf;
     cbs[i] = cb.data() + i;
   }
 

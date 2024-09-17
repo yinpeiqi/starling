@@ -124,7 +124,7 @@ public:
     void executeInOneTransaction(int tid) {
         assert (task_.get() != nullptr);
         // To users, the tid should be start from start_core
-        (*task_)(tid + start_core_);
+        (*task_)(tid);
         activate[tid].store(false);
         notify_cnt--;
     }

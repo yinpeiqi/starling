@@ -71,9 +71,9 @@ namespace diskann {
 
 
   template<typename T>
-  void IndexEngine<T>::setup_thread_data(_u64 nthreads, _u64 io_threads) {
+  void IndexEngine<T>::setup_thread_data(_u64 nthreads) {
     pool = std::make_shared<ThreadPool>(nthreads);
-    ctxs.resize(nthreads + io_threads);
+    ctxs.resize(nthreads);
     scratchs.resize(nthreads);
     // parallel for
     pool->runTask([&, this](int tid) {
@@ -105,15 +105,6 @@ namespace diskann {
               this->aligned_dim * sizeof(float));
       scratchs[tid] = scratch;
     });
-    // setup io pool and ctx, start from core-id [nthreads]
-    if (use_cache) {
-      io_pool = std::make_shared<ThreadPool>(io_threads, nthreads);
-      io_pool->runTask([&, this](int tid) {
-        this->io_manager->register_thread();
-        ctxs[tid] = this->io_manager->get_ctx();
-      });
-    }
-
     load_flag = true;
   }
 
@@ -132,6 +123,11 @@ namespace diskann {
 
       delete scratch.visited;
       delete scratch.page_visited;
+    }
+    if (use_cache) {
+      for (_u64 iotid = 0; iotid < this->n_io_nthreads; iotid++) {
+        diskann::aligned_free((void *) disk_write_buffer[iotid]);
+      }
     }
     this->io_manager->deregister_all_threads();
   }
@@ -198,10 +194,9 @@ namespace diskann {
                             const char *index_prefix) {
 #else
   template<typename T>
-  int IndexEngine<T>::load(uint32_t num_threads, uint32_t io_threads, bool use_c,
-                           const char *index_prefix, const std::string& disk_index_path) {
+  int IndexEngine<T>::load(uint32_t num_threads, const char *index_prefix,
+                           const std::string& disk_index_path) {
 #endif
-    this->use_cache = use_c;
     std::string pq_table_bin = std::string(index_prefix) + "_pq_pivots.bin";
     std::string pq_compressed_vectors =
         std::string(index_prefix) + "_pq_compressed.bin";
@@ -297,8 +292,7 @@ namespace diskann {
     // 'standard' io_manager approach.
     io_manager->open(disk_index_file, O_DIRECT | O_RDONLY | O_LARGEFILE);
     this->max_nthreads = num_threads;
-    this->n_io_nthreads = 1;
-    this->setup_thread_data(num_threads, this->n_io_nthreads);
+    this->setup_thread_data(num_threads);
 
     char *                   bytes = getHeaderBytes();
     ContentBuf               buf(bytes, HEADER_SIZE);
@@ -382,8 +376,7 @@ namespace diskann {
     std::string index_fname(disk_index_file);
     this->disk_fid = io_manager->open(index_fname, O_DIRECT | O_RDONLY | O_LARGEFILE);
     this->max_nthreads = num_threads;
-    this->n_io_nthreads = io_threads;
-    this->setup_thread_data(num_threads, this->n_io_nthreads);
+    this->setup_thread_data(num_threads);
 
 #endif
 
@@ -457,59 +450,92 @@ namespace diskann {
       delete[] norm_val;
     }
 
-    // load cache data
-    if (use_cache) {
-      load_disk_cache_data(index_prefix);
-      // init freq infos
-      freq_ = std::make_shared<FreqWindowList>(num_points);
-    }
-
     diskann::cout << "done.." << std::endl;
     return 0;
   }
 
   template<typename T>
+  int IndexEngine<T>::init_disk_cache(uint32_t io_threads, bool use_c, float cache_scale, const std::string &index_prefix) {
+    this->use_cache = use_c;
+    this->cache_scale = cache_scale;
+    this->n_io_nthreads = io_threads;
+    // setup io pool and ctx, start from core-id [nthreads]
+    if (use_cache) {
+      if (io_threads > 0) {
+        io_pool = std::make_shared<ThreadPool>(io_threads, this->max_nthreads);
+        w_ctxs.resize(io_threads);
+        disk_write_buffer.resize(io_threads);
+        io_pool->runTask([&, this](int tid) {
+          this->io_manager->register_thread();
+          w_ctxs[tid] = this->io_manager->get_ctx();
+          diskann::alloc_aligned((void **) &(disk_write_buffer[tid]),
+                                (_u64) MAX_N_SECTOR_READS * (_u64) SECTOR_LEN,
+                                SECTOR_LEN);
+
+        });
+      }
+      // load cache data
+      load_disk_cache_data(index_prefix);
+      // init freq infos
+      freq_ = std::make_shared<FreqWindowList>(num_points);
+      // init tot page size.
+      tot_cache_page = (int) (cache_scale * gp_layout_.size());
+    }
+    return 0;
+  }
+
+  template<typename T>
   void IndexEngine<T>::load_disk_cache_data(const std::string &index_prefix) {
-    std::string disk_cache_file = std::string(index_prefix) + "_disk_cache.index";
-    std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
+    std::string disk_cache_file = 
+      std::string(index_prefix) + "_disk_cache" + std::to_string(cache_scale).substr(0, 4) + ".index";
+    std::string disk_cache_layout_file = 
+      std::string(index_prefix) + "_disk_cache_partition" + std::to_string(cache_scale).substr(0, 4) + ".bin";
     this->cache_fid = io_manager->open(disk_cache_file, O_DIRECT | O_RDWR | O_CREAT | O_LARGEFILE);
     if (file_exists(disk_cache_layout_file)) {
       std::ifstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::in);
-      _u64          partition_nums;
-      cache_part.read((char *) &partition_nums, sizeof(_u64));
-      for (_u64 i = 0; i < partition_nums; i++) {
-        unsigned s;
-        cache_part.read((char *) &s, sizeof(unsigned));
+      _u32 partition_nums;
+      cache_part.read((char *) &partition_nums, sizeof(_u32));
+      this->cache_layout_.resize(partition_nums);
+      cur_page_id.store(partition_nums);
+      for (_u32 i = 0; i < partition_nums; i++) {
+        _u32 s;
+        cache_part.read((char *) &s, sizeof(_u32));
         this->cache_layout_[i].resize(s);
-        cache_part.read((char *) cache_layout_[i].data(), sizeof(unsigned) * s);
+        cache_part.read((char *) cache_layout_[i].data(), sizeof(_u32) * s);
       }
       _u32 node_id, page_id;
-      for (_u64 i = 0; i < partition_nums; i++) {
+      _u32 id2page_size;
+      cache_part.read((char *) &id2page_size, sizeof(_u32));
+      for (_u32 i = 0; i < id2page_size; i++) {
         cache_part.read((char *) &node_id, sizeof(_u32));
         cache_part.read((char *) &page_id, sizeof(_u32));
         this->id2cache_page_.insert({node_id, page_id});
       }
       diskann::cout << "Read disk cache with " << partition_nums << " nodes." << std::endl;
+    } else {
+      cur_page_id.store(0);
     }
   }
 
   template<typename T>
   void IndexEngine<T>::write_disk_cache_layout(const std::string &index_prefix) {
-    std::string disk_cache_layout_file = std::string(index_prefix) + "_disk_cache_partition.bin";
+    std::string disk_cache_layout_file =
+      std::string(index_prefix) + "_disk_cache_partition" + std::to_string(cache_scale).substr(0, 4) + ".bin";
     std::ofstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::out | std::ios::trunc);
-    _u64 tot_size = this->id2cache_page_.size();
-    assert (tot_size == cache_layout_.size());
-    cache_part.write((char *) &tot_size, sizeof(_u64));
-    for (_u64 i = 0; i < tot_size; i++) {
-      unsigned s = cache_layout_[i].size();
-      cache_part.write((char *) &s, sizeof(_u64));
-      cache_part.write((char *) cache_layout_[i].data(), sizeof(unsigned) * s);
+    _u32 tot_size = cache_layout_.size();
+    cache_part.write((char *) &tot_size, sizeof(_u32));
+    for (_u32 i = 0; i < tot_size; i++) {
+      _u32 s = cache_layout_[i].size();
+      cache_part.write((char *) &s, sizeof(_u32));
+      cache_part.write((char *) cache_layout_[i].data(), sizeof(_u32) * s);
     }
+    tot_size = this->id2cache_page_.size();
+    cache_part.write((char *) &tot_size, sizeof(_u32));
     for (auto& pair : this->id2cache_page_) {
       cache_part.write((char *) &(pair.first), sizeof(_u32));
       cache_part.write((char *) &(pair.second), sizeof(_u32));
     }
-    diskann::cout << "Write disk cache with " << tot_size << " nodes." << std::endl;
+    diskann::cout << "Write disk cache with " << cache_layout_.size() << " blocks, contains " << tot_size << " nodes." << std::endl;
   }
 
   template<typename T>

@@ -27,6 +27,7 @@
 #define MAX_N_CMPS 16384
 #define SECTOR_LEN (_u64) 4096
 #define MAX_N_SECTOR_READS 128
+#define MAX_N_SECTOR_WRITE 32
 #define MAX_PQ_CHUNKS 256
 
 #define FULL_PRECISION_REORDER_MULTIPLIER 3
@@ -65,6 +66,7 @@ namespace diskann {
     unsigned id;
     unsigned pid;
     int fid;
+    char* node_buf;
     char* sector_buf;
     // Pointer to the search path node in the same block.
     // These nodes are execute directly, such that can init the struct here.
@@ -99,9 +101,12 @@ namespace diskann {
                                uint32_t num_threads, const char *index_prefix);
 #else
     // load compressed data, and obtains the handle to the disk-resident index
-    DISKANN_DLLEXPORT int load(uint32_t num_threads, uint32_t io_threads, bool use_cache, const char *index_prefix,
+    DISKANN_DLLEXPORT int load(uint32_t num_threads, const char *index_prefix,
         const std::string& disk_index_path);
 #endif
+
+    // load cache data
+    DISKANN_DLLEXPORT int init_disk_cache(uint32_t io_threads, bool use_cache, const float cache_scale, const std::string &index_prefix);
 
     DISKANN_DLLEXPORT void load_mem_index(Metric metric, const size_t query_dim,
         const std::string &mem_index_path, const _u32 num_threads,
@@ -122,7 +127,7 @@ namespace diskann {
 
    protected:
     DISKANN_DLLEXPORT void use_medoids_data_as_centroids();
-    DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads, _u64 io_threads);
+    DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads);
     DISKANN_DLLEXPORT void destroy_thread_data();
     DISKANN_DLLEXPORT void start_io_threads();
     DISKANN_DLLEXPORT void stop_io_threads();
@@ -197,6 +202,7 @@ namespace diskann {
 
     // thread-specific scratch
     std::vector<IOContext> ctxs;
+    std::vector<IOContext> w_ctxs;  //write contexts
     std::vector<DataScratch<T>> scratchs;
     // thread pool
     std::shared_ptr<ThreadPool> pool;
@@ -219,9 +225,19 @@ namespace diskann {
     bool use_cache;
     int disk_fid;
     int cache_fid;
+    std::mutex cache_upt_lock;  // only one thread can update layout at a time
     tsl::robin_map<_u32, _u32> id2cache_page_;
     std::vector<std::vector<unsigned>> cache_layout_;
     std::shared_ptr<FreqWindowList> freq_;
+    // each should be [MAX_N_SECTOR_WRITES * SECTOR_LEN]
+    std::vector<char*> disk_write_buffer;
+
+    // disk cache page management
+    std::atomic_int cur_page_id;
+    int tot_cache_page;
+    float cache_scale;
+    // also need to write to ssd when system terminal
+    tbb::concurrent_queue<_u32> free_page_queue_;
 
     // IO thread pool
     tbb::concurrent_queue<std::vector<std::shared_ptr<FrontierNode>>> path_queue_;
