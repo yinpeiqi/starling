@@ -471,7 +471,6 @@ namespace diskann {
           diskann::alloc_aligned((void **) &(disk_write_buffer[tid]),
                                 (_u64) MAX_N_SECTOR_READS * (_u64) SECTOR_LEN,
                                 SECTOR_LEN);
-
         });
       }
       // load cache data
@@ -479,7 +478,7 @@ namespace diskann {
       // init freq infos
       freq_ = std::make_shared<FreqWindowList>(num_points);
       // init tot page size.
-      tot_cache_page = (int) (cache_scale * gp_layout_.size());
+      tot_cache_page = (_u32) (cache_scale * gp_layout_.size());
     }
     return 0;
   }
@@ -523,17 +522,26 @@ namespace diskann {
       std::string(index_prefix) + "_disk_cache_partition" + std::to_string(cache_scale).substr(0, 4) + ".bin";
     std::ofstream cache_part(disk_cache_layout_file, std::ios::binary | std::ios::out | std::ios::trunc);
     _u32 tot_size = cache_layout_.size();
+    std::vector<bool> page_is_empty;
+    page_is_empty.resize(tot_size);
     cache_part.write((char *) &tot_size, sizeof(_u32));
     for (_u32 i = 0; i < tot_size; i++) {
       _u32 s = cache_layout_[i].size();
       cache_part.write((char *) &s, sizeof(_u32));
       cache_part.write((char *) cache_layout_[i].data(), sizeof(_u32) * s);
+      page_is_empty[i] = true;
     }
     tot_size = this->id2cache_page_.size();
     cache_part.write((char *) &tot_size, sizeof(_u32));
     for (auto& pair : this->id2cache_page_) {
       cache_part.write((char *) &(pair.first), sizeof(_u32));
       cache_part.write((char *) &(pair.second), sizeof(_u32));
+      page_is_empty[pair.second] = false;
+    }
+    for (_u32 i = 0; i < cache_layout_.size(); i++) {
+      if (page_is_empty[i]) {
+        free_page_queue_.push(i);
+      }
     }
     diskann::cout << "Write disk cache with " << cache_layout_.size() << " blocks, contains " << tot_size << " nodes." << std::endl;
   }

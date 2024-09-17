@@ -233,8 +233,8 @@ namespace diskann {
     std::vector<char*> disk_write_buffer;
 
     // disk cache page management
-    std::atomic_int cur_page_id;
-    int tot_cache_page;
+    std::atomic<unsigned> cur_page_id;
+    _u32 tot_cache_page;
     float cache_scale;
     // also need to write to ssd when system terminal
     tbb::concurrent_queue<_u32> free_page_queue_;

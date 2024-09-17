@@ -526,7 +526,7 @@ namespace diskann {
                 }
               }
               // the block already filled with neighbors, don't consider it now.
-              if (new_layout.size() == this->nnodes_per_sector) {
+              if (new_layout.size() > 8) {
                 marker++;
                 continue;
               }
@@ -544,8 +544,6 @@ namespace diskann {
               // I think the first node should be nid, so here we can just start from 1?
               for (_u64 j = 1; j < cache_layout_[pid].size(); j++) {
                 if (nb_set.find(cache_layout_[pid][j]) != nb_set.end()) {
-                  // find a neighbor in gp block.
-                  // TODO: how to replace the original nodes?
                   new_layout.push_back(cache_layout_[pid][j]);
                   layout_nodebufs.push_back(nodes[marker]->sector_buf + j * max_node_len);
                 } else {
@@ -553,8 +551,7 @@ namespace diskann {
                   kick_out_nodebuf.push_back(nodes[marker]->sector_buf + j * max_node_len);
                 }
               }
-              // the block already filled with neighbors, don't consider it now.
-              if (new_layout.size() == this->nnodes_per_sector) {
+              if (new_layout.size() > 8) {
                 marker++;
                 continue;
               }
@@ -593,7 +590,14 @@ namespace diskann {
             // write the buffer data to SSD
             // Here is the case cache not full.
             if (cur_page_id.load() < tot_cache_page) {
-              int w_cache_pid = cur_page_id++;
+              _u32 w_cache_pid;
+              if (free_page_queue_.unsafe_size() > 100) {
+                while (!free_page_queue_.try_pop(w_cache_pid)) {
+                  continue;
+                }
+              } else {
+                w_cache_pid = cur_page_id++;
+              }
               // in case concurrent error occurs, since the operation is not atomic.
               if (w_cache_pid >= tot_cache_page) {
                 // TODO: do something, disk cache is full.
@@ -617,26 +621,20 @@ namespace diskann {
           // TODO: update cache layout and id2cachepage. Using lock.
           // TODO (Question): how to fix consistency problem?
           std::unique_lock<std::mutex> lk(cache_upt_lock);
-          // std::cout << "write page: " << new_id2pids.size() << std::endl;
           for (size_t i = 0; i < new_id2pids.size(); i++) {
             auto nid = new_id2pids[i].first;
             auto cache_pid = new_id2pids[i].second;
             if (id2cache_page_.find(nid) != id2cache_page_.end()) {
-              // TODO: write to a cache file, existance.
-              if (cache_pid == cache_layout_.size()) {  // append one
-                cache_layout_.push_back(new_layouts[i]);
-                id2cache_page_[nid] = cache_pid;
-              } else {
-                // TODO
-              }
+              // write to a cache page, existance.
+              free_page_queue_.push(id2cache_page_[nid]);
+              id2cache_page_[nid] = cache_pid;
             } else {
-              if (cache_pid == cache_layout_.size()) {  // append one
-                cache_layout_.push_back(new_layouts[i]);
-                id2cache_page_.insert({nid, cache_pid});
-              } else {
-                // TODO: write to a existance page, not support now.
-                // std::cout << "cache pid not filled" << std::endl;
-              }
+              id2cache_page_.insert({nid, cache_pid});
+            }
+            if (cache_pid == cache_layout_.size()) {  // append one
+              cache_layout_.push_back(new_layouts[i]);
+            } else {
+              cache_layout_[cache_pid] = new_layouts[i];
             }
           }
           lk.unlock();
