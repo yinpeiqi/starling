@@ -457,10 +457,10 @@ namespace diskann {
   template<typename T>
   int IndexEngine<T>::init_disk_cache(uint32_t io_threads, bool use_c, float cache_scale, const std::string &index_prefix) {
     this->use_cache = use_c;
-    this->cache_scale = cache_scale;
-    this->n_io_nthreads = io_threads;
-    // setup io pool and ctx, start from core-id [nthreads]
     if (use_cache) {
+      this->cache_scale = cache_scale;
+      this->n_io_nthreads = io_threads;
+      // setup io pool and ctx, start from core-id [nthreads]
       if (io_threads > 0) {
         io_pool = std::make_shared<ThreadPool>(io_threads, this->max_nthreads);
         w_ctxs.resize(io_threads);
@@ -479,6 +479,9 @@ namespace diskann {
       freq_ = std::make_shared<FreqWindowList>(num_points);
       // init tot page size.
       tot_cache_page = (_u32) (cache_scale * gp_layout_.size());
+    } else {
+      this->cache_scale = 0;
+      this->n_io_nthreads = 0;
     }
     return 0;
   }

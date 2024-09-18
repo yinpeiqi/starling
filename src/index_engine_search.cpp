@@ -257,8 +257,8 @@ namespace diskann {
 
             auto fn = sec_buf2ftr[sector_buf];
             const _u32 exact_id = fn->id;
+            const _u32 pid = fn->pid;
             const int fid = fn->fid;
-            const int pid = fn->pid;
             unsigned id, p_size;
             unsigned* node_in_page;
             if (fid == disk_fid) {
@@ -281,8 +281,9 @@ namespace diskann {
                 id = cache_layout_[pid][j];
               }
               if (id != exact_id) {
-                if (dist_scratch[j] >= retset[cur_list_size - 1].distance * pq_filter_ratio
-                  || exact_visited[id]) {
+                if ((cur_list_size == l_search && \
+                     dist_scratch[j] >= retset[cur_list_size - 1].distance * pq_filter_ratio) \
+                     || exact_visited[id]) {
                     continue;
                 } else {
                   // IO: notify this link (discovered from block)

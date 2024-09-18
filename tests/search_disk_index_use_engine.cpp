@@ -313,8 +313,10 @@ int search_disk_index_use_engine(
     delete[] stats;
   }
 
-  // here save the cache layout.
-  _index_engine->write_disk_cache_layout(index_path_prefix.c_str());
+  if (use_cache) {
+    // here save the cache layout.
+    _index_engine->write_disk_cache_layout(index_path_prefix.c_str());
+  }
 
   diskann::cout << "Done searching. Now saving results " << std::endl;
   _u64 test_id = 0;
