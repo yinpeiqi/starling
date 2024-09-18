@@ -465,7 +465,7 @@ namespace diskann {
       IOContext& ctx = w_ctxs[tid];
       char* write_sector_scratch = disk_write_buffer[tid];
       std::vector<std::shared_ptr<FrontierNode>> nodes;
-      double save_ratio = 0.1;
+      double save_ratio = 0.05;
 
       while (true) {
         if (path_queue_.try_pop(nodes)) {
@@ -497,20 +497,20 @@ namespace diskann {
             _u32 pid = nodes[marker]->pid;
             new_layout.push_back(nodes[marker]->id);
             layout_nodebufs.push_back(nodes[marker]->node_buf);
+            // record the neighbors of the node.
+            tsl::robin_set<unsigned> nb_set;
+            unsigned *node_nbrs = OFFSET_TO_NODE_NHOOD(nodes[marker]->node_buf);
+            unsigned nnbrs = *(node_nbrs++);
+            for (unsigned m = 0; m < nnbrs; ++m) {
+              nb_set.insert(node_nbrs[m]);
+            }
+            for (unsigned m = 0; m < nodes[marker]->in_blk_.size(); ++m) {
+              nb_set.insert(nodes[marker]->in_blk_[m]->id);
+            }
             // nodes can be kicked out.
             std::vector<unsigned> node_kick_out;
             std::vector<char*> kick_out_nodebuf;
             if (nodes[marker]->fid == disk_fid) {
-              // record the neighbors of the node.
-              tsl::robin_set<unsigned> nb_set;
-              unsigned *node_nbrs = OFFSET_TO_NODE_NHOOD(nodes[marker]->node_buf);
-              unsigned nnbrs = *(node_nbrs++);
-              for (unsigned m = 0; m < nnbrs; ++m) {
-                nb_set.insert(node_nbrs[m]);
-              }
-              for (unsigned m = 0; m < nodes[marker]->in_blk_.size(); ++m) {
-                nb_set.insert(nodes[marker]->in_blk_[m]->id);
-              }
               // check whether there are neighbors or in block, if so continue.
               for (_u64 j = 0; j < gp_layout_[pid].size(); j++) {
                 if (gp_layout_[pid][j] == nodes[marker]->id) {
@@ -525,22 +525,7 @@ namespace diskann {
                   kick_out_nodebuf.push_back(nodes[marker]->sector_buf + j * max_node_len);
                 }
               }
-              // the block already filled with neighbors, don't consider it now.
-              if (new_layout.size() > 8) {
-                marker++;
-                continue;
-              }
             } else {
-              // record the neighbors of the node.
-              tsl::robin_set<unsigned> nb_set;
-              unsigned *node_nbrs = OFFSET_TO_NODE_NHOOD(nodes[marker]->node_buf);
-              unsigned nnbrs = *(node_nbrs++);
-              for (unsigned m = 0; m < nnbrs; ++m) {
-                nb_set.insert(node_nbrs[m]);
-              }
-              for (unsigned m = 0; m < nodes[marker]->in_blk_.size(); ++m) {
-                nb_set.insert(nodes[marker]->in_blk_[m]->id);
-              }
               // I think the first node should be nid, so here we can just start from 1?
               for (_u64 j = 1; j < cache_layout_[pid].size(); j++) {
                 if (nb_set.find(cache_layout_[pid][j]) != nb_set.end()) {
@@ -551,10 +536,11 @@ namespace diskann {
                   kick_out_nodebuf.push_back(nodes[marker]->sector_buf + j * max_node_len);
                 }
               }
-              if (new_layout.size() > 8) {
-                marker++;
-                continue;
-              }
+            }
+            // the block already filled with neighbors, don't consider it now.
+            if (new_layout.size() >= this->nnodes_per_sector) {
+              marker++;
+              continue;
             }
             // to insert the newly discovered neighbors.
             for (_u64 j = 0; j < nodes[marker]->nb_.size(); j++) {
@@ -571,13 +557,29 @@ namespace diskann {
                 break;
               }
             }
+            // insert the neighbors of in-block neighbors
+            for (_u64 i = 0; i < nodes[marker]->in_blk_.size(); i++) {
+              if (new_layout.size() >= this->nnodes_per_sector) break;
+              auto nb = nodes[marker]->in_blk_[i];
+              for (_u64 j = 0; j < nb->in_blk_.size(); j++) {
+                if (new_layout.size() >= this->nnodes_per_sector) break;
+                auto hop2_nb = nb->in_blk_[j];
+                new_layout.push_back(hop2_nb->id);
+                layout_nodebufs.push_back(hop2_nb->node_buf);
+              }
+              for (_u64 j = 0; j < nb->nb_.size(); j++) {
+                if (new_layout.size() >= this->nnodes_per_sector) break;
+                auto hop2_nb = nb->nb_[j];
+                new_layout.push_back(hop2_nb->id);
+                layout_nodebufs.push_back(hop2_nb->node_buf);
+              }
+            }
             // fill the block with kicked out nodes in original block.
-            for (_u64 j = 0; j < node_kick_out.size(); j++) {
-              if (new_layout.size() < this->nnodes_per_sector) {
+            if (new_layout.size() < this->nnodes_per_sector) {
+              for (_u64 j = 0; j < node_kick_out.size(); j++) {
+                if (new_layout.size() >= this->nnodes_per_sector) break;
                 new_layout.push_back(node_kick_out[j]);
                 layout_nodebufs.push_back(kick_out_nodebuf[j]);
-              } else {
-                break;
               }
             }
             // copy data to write buffer
@@ -591,6 +593,7 @@ namespace diskann {
             // Here is the case cache not full.
             if (cur_page_id.load() < tot_cache_page) {
               _u32 w_cache_pid;
+              // to avoid consistency problem.
               if (free_page_queue_.unsafe_size() > 100) {
                 while (!free_page_queue_.try_pop(w_cache_pid)) {
                   continue;
