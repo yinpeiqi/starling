@@ -228,6 +228,7 @@ namespace diskann {
     std::mutex cache_upt_lock;  // only one thread can update layout at a time
     tsl::robin_map<_u32, _u32> id2cache_page_;
     std::vector<std::vector<unsigned>> cache_layout_;
+    std::mutex freq_upt_lock;  // only one thread can update freq at a time
     std::shared_ptr<FreqWindowList> freq_;
     // each should be [MAX_N_SECTOR_WRITES * SECTOR_LEN]
     std::vector<char*> disk_write_buffer;

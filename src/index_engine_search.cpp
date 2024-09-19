@@ -470,9 +470,11 @@ namespace diskann {
 
       while (true) {
         if (path_queue_.try_pop(nodes)) {
+          std::unique_lock<std::mutex> f_lk(freq_upt_lock);
           for (size_t i = 0; i < nodes.size(); i++) {
             freq_->add(nodes[i]->id);
           }
+          f_lk.unlock();
           // re-sort by neighbor used
           std::sort(nodes.begin(), nodes.end(),
             [&](const std::shared_ptr<FrontierNode> left, const std::shared_ptr<FrontierNode> right) {
@@ -619,11 +621,13 @@ namespace diskann {
             }
             marker++;
           }
+          // release memory space, this can be done before submit req.
+          nodes.clear();
+
           // submit write req and get result.
           int n_ops = io_manager->submit_write_reqs(write_reqs, write_fids, ctx);
           io_manager->get_events(ctx, n_ops);
-          // TODO: update cache layout and id2cachepage. Using lock.
-          // TODO (Question): how to fix consistency problem?
+          // update cache layout and id2cachepage. Using lock.
           std::unique_lock<std::mutex> lk(cache_upt_lock);
           for (size_t i = 0; i < new_id2pids.size(); i++) {
             auto nid = new_id2pids[i].first;
@@ -643,8 +647,6 @@ namespace diskann {
           }
           lk.unlock();
 
-          // release memory space.
-          nodes.clear();
         } else {
           std::this_thread::yield();
         }
