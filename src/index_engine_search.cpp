@@ -236,6 +236,16 @@ namespace diskann {
             part_timer.reset();
             int n_read_blks = io_manager->get_events(ctx, min_r, n_io_in_q, tmp_bufs);
             for (int i = n_read_blks - 1; i >= 0; i--) {
+              // check optimistic lock
+              auto fn = sec_buf2ftr[tmp_bufs[i]];
+              if (fn->fid == cache_fid) {
+                if (cache_page2id_[fn->pid] != fn->id) {
+                  std::cout << "write read conflict, id: " << fn->id << ", pid: " << fn->pid \
+                            << ", but read: " << cache_page2id_[fn->pid] << std::endl;
+                  exit(0);
+                }
+              }
+              // update to sector buffers
               sector_buffers[top_bufs_idx] = tmp_bufs[i];
               top_bufs_idx = (top_bufs_idx + 1) % MAX_N_SECTOR_READS;
             }
@@ -624,6 +634,13 @@ namespace diskann {
           // release memory space, this can be done before submit req.
           nodes.clear();
 
+          // mark the writing page as empty
+          for (size_t i = 0; i < new_id2pids.size(); i++) {
+            auto cache_pid = new_id2pids[i].second;
+            if (cache_pid < cache_layout_.size()) {
+              this->cache_page2id_[cache_pid] = INF;
+            }
+          }
           // submit write req and get result.
           int n_ops = io_manager->submit_write_reqs(write_reqs, write_fids, ctx);
           io_manager->get_events(ctx, n_ops);
@@ -641,8 +658,10 @@ namespace diskann {
             }
             if (cache_pid == cache_layout_.size()) {  // append one
               cache_layout_.push_back(new_layouts[i]);
+              this->cache_page2id_.push_back(nid);
             } else {
               cache_layout_[cache_pid] = new_layouts[i];
+              this->cache_page2id_[cache_pid] = nid;
             }
           }
           lk.unlock();

@@ -29,6 +29,7 @@
 #define MAX_N_SECTOR_READS 128
 #define MAX_N_SECTOR_WRITE 32
 #define MAX_PQ_CHUNKS 256
+#define INF (unsigned) 0xffffffff
 
 #define FULL_PRECISION_REORDER_MULTIPLIER 3
 
@@ -227,6 +228,7 @@ namespace diskann {
     int cache_fid;
     std::mutex cache_upt_lock;  // only one thread can update layout at a time
     tsl::robin_map<_u32, _u32> id2cache_page_;
+    std::vector<_u32> cache_page2id_;  // use for check consistency.
     std::vector<std::vector<unsigned>> cache_layout_;
     std::mutex freq_upt_lock;  // only one thread can update freq at a time
     std::shared_ptr<FreqWindowList> freq_;
