@@ -68,13 +68,24 @@ namespace diskann {
 
   template<typename T>
   inline double get_mean_stats(
-      QueryStats *stats, uint64_t len,
+      QueryStats *stats, uint64_t len, 
       const std::function<T(const QueryStats &)> &member_fn) {
     double avg = 0;
     for (uint64_t i = 0; i < len; i++) {
       avg += (double) member_fn(stats[i]);
     }
     return avg / len;
+  }
+
+  template<typename T>
+  inline double get_mean_stats(
+      QueryStats *stats, uint64_t len, uint64_t warmup, 
+      const std::function<T(const QueryStats &)> &member_fn) {
+    double avg = 0;
+    for (uint64_t i = warmup; i < len; i++) {
+      avg += (double) member_fn(stats[i]);
+    }
+    return avg / (len - warmup);
   }
 
   // The following two functions are used when getting statistics while range searching on only queries with

@@ -482,6 +482,7 @@ namespace diskann {
     } else {
       this->cache_scale = 0;
       this->n_io_nthreads = 0;
+      this->cache_fid = -1;
     }
     return 0;
   }

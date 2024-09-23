@@ -230,30 +230,6 @@ namespace diskann {
         _u32 botm_bufs_idx = 0;
         while (k < cur_list_size && num_ios < io_limit) {
 
-          if (n_io_in_q > 0) {
-            unsigned min_r = 0;
-            if (n_proc_in_q == 0) min_r = 1;
-            part_timer.reset();
-            int n_read_blks = io_manager->get_events(ctx, min_r, n_io_in_q, tmp_bufs);
-            for (int i = n_read_blks - 1; i >= 0; i--) {
-              // check optimistic lock
-              auto fn = sec_buf2ftr[tmp_bufs[i]];
-              if (fn->fid == cache_fid) {
-                if (cache_page2id_[fn->pid] != fn->id) {
-                  std::cout << "write read conflict, id: " << fn->id << ", pid: " << fn->pid \
-                            << ", but read: " << cache_page2id_[fn->pid] << std::endl;
-                  exit(0);
-                }
-              }
-              // update to sector buffers
-              sector_buffers[top_bufs_idx] = tmp_bufs[i];
-              top_bufs_idx = (top_bufs_idx + 1) % MAX_N_SECTOR_READS;
-            }
-            if (stats != nullptr) stats->read_disk_us += (double) part_timer.elapsed();
-            n_io_in_q -= n_read_blks;
-            n_proc_in_q += n_read_blks;
-          }
-
           if (n_proc_in_q > 0) {
             part_timer.reset();
             auto sector_buf = sector_buffers[botm_bufs_idx];
@@ -291,8 +267,7 @@ namespace diskann {
                 id = cache_layout_[pid][j];
               }
               if (id != exact_id) {
-                if ((cur_list_size == l_search && \
-                     dist_scratch[j] >= retset[cur_list_size - 1].distance * pq_filter_ratio) \
+                if (dist_scratch[j] >= retset[cur_list_size - 1].distance * pq_filter_ratio \
                      || exact_visited[id]) {
                     continue;
                 } else {
@@ -327,6 +302,30 @@ namespace diskann {
             n_proc_in_q--;
           }
 
+          if (n_io_in_q > 0) {
+            unsigned min_r = 0;
+            if (n_proc_in_q == 0) min_r = 1;
+            part_timer.reset();
+            int n_read_blks = io_manager->get_events(ctx, min_r, n_io_in_q, tmp_bufs);
+            for (int i = n_read_blks - 1; i >= 0; i--) {
+              // check optimistic lock
+              auto fn = sec_buf2ftr[tmp_bufs[i]];
+              if (fn->fid == cache_fid) {
+                if (cache_page2id_[fn->pid] != fn->id) {
+                  std::cout << "write read conflict, id: " << fn->id << ", pid: " << fn->pid \
+                            << ", but read: " << cache_page2id_[fn->pid] << std::endl;
+                  exit(0);
+                }
+              }
+              // update to sector buffers
+              sector_buffers[top_bufs_idx] = tmp_bufs[i];
+              top_bufs_idx = (top_bufs_idx + 1) % MAX_N_SECTOR_READS;
+            }
+            if (stats != nullptr) stats->read_disk_us += (double) part_timer.elapsed();
+            n_io_in_q -= n_read_blks;
+            n_proc_in_q += n_read_blks;
+          }
+
           if (n_io_in_q == 0 && n_proc_in_q < beam_width) {
             // clear iteration state
             frontier_read_reqs.clear();
@@ -356,8 +355,7 @@ namespace diskann {
                         stats->repeat_read++;
                       }
                     }
-                  }
-                  else {
+                  } else {
                     pid = id2page_[retset[marker].id];
                     fid = disk_fid;
                     for (unsigned j = 0; j < gp_layout_[pid].size(); ++j) {
@@ -417,6 +415,14 @@ namespace diskann {
         }
         tmp_timer.reset();
 
+        // better clear here.
+        id2ftr.clear();
+        if (n_io_nthreads > 0) {
+          path_queue_.push(frontier);
+        } else {
+          frontier.clear();
+        }
+
         // re-sort by distance
         std::sort(full_retset.begin(), full_retset.end(),
                   [](const Neighbor &left, const Neighbor &right) {
@@ -453,13 +459,6 @@ namespace diskann {
           stats->total_us = (double) query_timer.elapsed();
           stats->postprocess_us = (double) tmp_timer.elapsed();
         }
-        // better clear here.
-        id2ftr.clear();
-        if (n_io_nthreads > 0) {
-          path_queue_.push(frontier);
-        } else {
-          frontier.clear();
-        }
       }
     });
     if (n_io_nthreads > 0) {
@@ -469,22 +468,34 @@ namespace diskann {
 
   template<typename T>
   void IndexEngine<T>::start_io_threads() {
-    freq_->move();
     io_stop_.store(false);
     io_pool->runTaskAsync([&, this](int tid) {
       // IO context init.
+      if (tid == 0) {
+        freq_->move();
+      }
       IOContext& ctx = w_ctxs[tid];
       char* write_sector_scratch = disk_write_buffer[tid];
+      std::vector<std::shared_ptr<FrontierNode>> ftr_nodes;
       std::vector<std::shared_ptr<FrontierNode>> nodes;
-      double save_ratio = 0.05;
+      double save_ratio = 0.2;
 
       while (true) {
-        if (path_queue_.try_pop(nodes)) {
+        if (path_queue_.try_pop(ftr_nodes)) {
           std::unique_lock<std::mutex> f_lk(freq_upt_lock);
-          for (size_t i = 0; i < nodes.size(); i++) {
-            freq_->add(nodes[i]->id);
+          Timer tr1, tr2;
+          tr1.reset();
+          for (size_t i = 0; i < ftr_nodes.size(); i++) {
+            freq_->add(ftr_nodes[i]->id);
           }
           f_lk.unlock();
+          tr2.reset();
+          // filter the nodes have neighbors.
+          for (size_t i = 0; i < ftr_nodes.size(); i++) {
+            if (ftr_nodes[i]->nb_.size() > 0) {
+              nodes.push_back(ftr_nodes[i]);
+            }
+          }
           // re-sort by neighbor used
           std::sort(nodes.begin(), nodes.end(),
             [&](const std::shared_ptr<FrontierNode> left, const std::shared_ptr<FrontierNode> right) {
@@ -493,6 +504,10 @@ namespace diskann {
             }
             return freq_->get(left->id) > freq_->get(right->id);
           });
+          double t_sort = tr2.elapsed();
+          int ns = nodes.size();
+
+          tr2.reset();
 
           int save_num = std::min((int)((double)nodes.size() * save_ratio), MAX_N_SECTOR_WRITE);
           // write offsets and buffer address, file id.
@@ -633,6 +648,7 @@ namespace diskann {
           }
           // release memory space, this can be done before submit req.
           nodes.clear();
+          ftr_nodes.clear();
 
           // mark the writing page as empty
           for (size_t i = 0; i < new_id2pids.size(); i++) {
@@ -641,9 +657,12 @@ namespace diskann {
               this->cache_page2id_[cache_pid] = INF;
             }
           }
+          double t_get = tr2.elapsed();
+          tr2.reset();
           // submit write req and get result.
           int n_ops = io_manager->submit_write_reqs(write_reqs, write_fids, ctx);
           io_manager->get_events(ctx, n_ops);
+          double t_send = tr2.elapsed();
           // update cache layout and id2cachepage. Using lock.
           std::unique_lock<std::mutex> lk(cache_upt_lock);
           for (size_t i = 0; i < new_id2pids.size(); i++) {
@@ -665,6 +684,9 @@ namespace diskann {
             }
           }
           lk.unlock();
+
+          double t_tot = tr1.elapsed();
+          // std::cout <<new_id2pids.size() << " " << ns << " " << t_sort << " " << t_get << " " << t_send << " " << t_tot << std::endl;
 
         } else {
           std::this_thread::yield();

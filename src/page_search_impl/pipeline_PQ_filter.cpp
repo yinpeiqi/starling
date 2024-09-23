@@ -249,7 +249,7 @@ namespace diskann {
         unsigned cand_size = 0;
         for (unsigned j = 0; j < p_size; ++j) {
           unsigned id = gp_layout_[pid][j];
-          if (id != exact_id && (dist_scratch[j] >= retset[cur_list_size - 1].distance * 1.2 
+          if (id != exact_id && (dist_scratch[j] >= retset[cur_list_size - 1].distance * 1.3 
               || exact_visited[id])) {
             continue;
           }

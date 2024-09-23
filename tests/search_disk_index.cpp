@@ -300,8 +300,10 @@ int search_disk_index(
                                                query_result_ids[test_id].data(),
                                                query_num, recall_at);
 
+    uint64_t warmup_cnt = 10;
+
     int mean_latency = (int)(diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.total_us; }));
 
     int latency_999 = (int)(diskann::get_percentile_stats<float>(
@@ -309,53 +311,53 @@ int search_disk_index(
         [](const diskann::QueryStats& stats) { return stats.total_us; }));
 
     auto mean_ios = diskann::get_mean_stats<unsigned>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.n_ios; });
 
     auto mean_ext_cmps = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.n_ext_cmps; });
 
     auto io_wastes = mean_ios * _pFlashIndex->get_nnodes_per_sector() - mean_ext_cmps;
 
     auto mean_cmps = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.n_cmps; });
 
     auto mean_repeat_read = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.repeat_read; });
 
     auto mean_preprocess = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.preprocess_us; });
 
     auto mean_postprocess = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.postprocess_us; });
 
     auto mean_cmp_time = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.cmp_us; });
 
     auto mean_dispatch_time = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.dispatch_us; });
 
     auto mean_read_disk_time = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.read_disk_us; });
 
     auto mean_page_proc_time = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.page_proc_us; });
 
     auto mean_cache_proc_time = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.cache_proc_us; });
 
     auto mean_disk_proc_time = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.disk_proc_us; });
 
     auto mean_insert_visited_time = diskann::get_mean_stats<float>(
@@ -363,16 +365,12 @@ int search_disk_index(
         [](const diskann::QueryStats& stats) { return stats.insert_visited_us; });
 
     auto mean_insert_visited_num = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.insert_visited; });
 
     auto mean_check_visited = diskann::get_mean_stats<float>(
-        stats, query_num,
+        stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.check_visited; });
-
-    auto mean_num_check_insert = diskann::get_mean_stats<float>(
-        stats, query_num,
-        [](const diskann::QueryStats& stats) { return stats.insert_visited_us; });
 
     float recall = 0;
     if (calc_recall_flag) {

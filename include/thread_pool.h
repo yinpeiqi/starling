@@ -75,8 +75,8 @@ public:
             (std::bind(&ThreadPool::start, this, i, start_core + i))));
         }
         if (start_core == 0) {
-            // bind-core[0] (itself)
-            bindCore(start_core);
+            // bind-core[0] (itself) (do not bind core now)
+            // bindCore(start_core);
         } else {
             workers.push_back(std::thread(
             (std::bind(&ThreadPool::start, this, 0, start_core))));
@@ -130,10 +130,11 @@ public:
     }
 
     void start(int tid, int bind_core_id) {
-        bindCore(bind_core_id);
+        // bindCore(bind_core_id);
         while (true) {
             while (!stop.load() && !activate[tid].load()) {
-                std::this_thread::yield();
+                // reduce the CPU utilization
+                std::this_thread::sleep_for(std::chrono::milliseconds(1));
             }
             if (stop) return;
 
