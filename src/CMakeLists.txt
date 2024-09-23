@@ -15,7 +15,7 @@ else()
         natural_number_set.cpp memory_mapper.cpp partition_and_pq.cpp
         pq_flash_index.cpp logger.cpp utils.cpp page_search.cpp visit_freq.cpp
         disk_cache/index_engine_search.cpp disk_cache/index_engine_store.cpp
-        disk_cache/file_io_manager.cpp range_search.cpp page_search_impl/${STARLING_DEFAULT})
+        file_io_manager.cpp range_search.cpp page_search_impl/${STARLING_DEFAULT})
     add_library(${PROJECT_NAME} ${CPP_SOURCES})
     add_library(${PROJECT_NAME}_s STATIC ${CPP_SOURCES})
     target_link_libraries(${PROJECT_NAME} tbb)
