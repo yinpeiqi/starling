@@ -4,7 +4,6 @@
 set(CMAKE_CXX_STANDARD 17)
 
 set(STARLING_DEFAULT page_search_starling.cpp)
-set(DISKANN beam_search_with_cache.cpp)
 set(PIPELINED_PQ pipeline_PQ_filter.cpp)
 
 if(MSVC)
