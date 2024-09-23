@@ -66,6 +66,7 @@ int search_disk_index(
     const _u32 mem_L,
     const bool use_page_search=true,
     const float use_ratio=1.0,
+    const float pq_ratio=1.25,
     const bool use_reorder_data = false,
     const bool use_sq = false,
     const bool disk_cache_pipeline = false,
@@ -110,22 +111,22 @@ int search_disk_index(
   }
 
   // default index
+  std::shared_ptr<AlignedFileReader> reader = nullptr;
   std::shared_ptr<diskann::PQFlashIndex<T>> _pFlashIndex;
 
   // use disk cache
+  std::shared_ptr<FileIOManager> fio_reader = nullptr;
   std::shared_ptr<diskann::IndexEngine<T>> _index_engine;
 
   int res;
   if (disk_cache_pipeline) {
-    std::shared_ptr<FileIOManager> fio_reader = nullptr;
     fio_reader.reset(new FileIOManager());
     _index_engine = std::make_shared<diskann::IndexEngine<T>>(fio_reader, metric);
     res = _index_engine->load(num_threads, index_path_prefix.c_str(), disk_file_path);
     res += _index_engine->init_disk_cache(io_threads, use_cache, cache_scale, index_path_prefix.c_str());
   } else {
-    std::shared_ptr<AlignedFileReader> reader = nullptr;
     reader.reset(new LinuxAlignedFileReader());
-    _pFlashIndex = std::make_unique<diskann::PQFlashIndex<T>>(reader, use_page_search, metric, use_sq);
+    _pFlashIndex = std::make_shared<diskann::PQFlashIndex<T>>(reader, use_page_search, metric, use_sq);
     res = _pFlashIndex->load(num_threads, index_path_prefix.c_str(), disk_file_path);
   }
 
@@ -160,7 +161,6 @@ int search_disk_index(
     node_list.clear();
     node_list.shrink_to_fit();
   }
-  size_t cache_mem = getCurrentRSS();
 
   omp_set_num_threads(num_threads);
 
@@ -232,7 +232,7 @@ int search_disk_index(
       _index_engine->page_search(
         query, query_num, query_aligned_dim, recall_at, mem_L, L, 
         query_result_ids_64, query_result_dists[test_id],
-        optimized_beamwidth, search_io_limit, use_reorder_data, use_ratio, stats);
+        optimized_beamwidth, search_io_limit, use_reorder_data, pq_ratio, stats);
     } else {
       if (use_page_search) {
         if (use_sq) {
@@ -295,7 +295,12 @@ int search_disk_index(
         stats, query_num, warmup_cnt,
         [](const diskann::QueryStats& stats) { return stats.n_ext_cmps; });
 
-    auto io_wastes = mean_ios * _pFlashIndex->get_nnodes_per_sector() - mean_ext_cmps;
+    double io_wastes = 0;
+    if (disk_cache_pipeline) {
+      io_wastes = mean_ios * _index_engine->get_nnodes_per_sector() - mean_ext_cmps;
+    } else {
+      io_wastes = mean_ios * _pFlashIndex->get_nnodes_per_sector() - mean_ext_cmps;
+    }
 
     auto mean_cmps = diskann::get_mean_stats<float>(
         stats, query_num, warmup_cnt,
@@ -563,19 +568,19 @@ int main(int argc, char** argv) {
       return search_disk_index<float>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, use_ratio, use_reorder_data, use_sq,
+          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq,
           disk_cache_pipeline, io_threads, use_cache, cache_scale);
     else if (data_type == std::string("int8"))
       return search_disk_index<int8_t>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, use_ratio, use_reorder_data, use_sq,
+          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq,
           disk_cache_pipeline, io_threads, use_cache, cache_scale);
     else if (data_type == std::string("uint8"))
       return search_disk_index<uint8_t>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, use_ratio, use_reorder_data, use_sq,
+          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq,
           disk_cache_pipeline, io_threads, use_cache, cache_scale);
     else {
       std::cerr << "Unsupported data type. Use float or int8 or uint8"

@@ -264,6 +264,7 @@ case $2 in
               --mem_index_path ${MEM_INDEX_PATH}_index \
               --use_page_search ${USE_PAGE_SEARCH} \
               --use_ratio ${PS_USE_RATIO} \
+              --pq_ratio ${PQ_FILTER_RATIO} \
               --disk_file_path ${DISK_FILE_PATH} \
               --use_sq ${USE_SQ} \
               --disk_cache_pipeline ${USE_ENGINE} \
@@ -296,8 +297,9 @@ case $2 in
               --mem_index_path ${MEM_INDEX_PATH}_index \
               --use_page_search ${USE_PAGE_SEARCH} \
               --use_ratio ${PS_USE_RATIO} \
+              --pq_ratio ${PQ_FILTER_RATIO} \
               --disk_file_path ${DISK_FILE_PATH} \
-              --use_sq ${USE_SQ}
+              --use_sq ${USE_SQ} \
               --disk_cache_pipeline ${USE_ENGINE} \
               --io_T ${IO_T} \
               --cache_scale ${CACHE_SCALE} \
