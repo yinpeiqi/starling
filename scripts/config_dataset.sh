@@ -27,7 +27,7 @@ dataset_bigann100M() {
   PREFIX=bigann_100M
   DATA_TYPE=uint8
   DIST_FN=l2
-  B=3.2
+  B=3.3
   K=10
   DATA_DIM=128
   DATA_N=100000000

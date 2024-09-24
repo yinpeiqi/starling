@@ -3,7 +3,7 @@ source config_dataset.sh
 
 # Choose the dataset by uncomment the line below
 # If multiple lines are uncommented, only the last dataset is effective
-dataset_bigann100M
+dataset_bigann10M
 
 ##################
 #   Disk Build   #
@@ -53,16 +53,24 @@ GP_SCALE_F=1 # the scale factor.
 ##############
 #   Search   #
 ##############
-BM_LIST=(4)
+BM_LIST=(1)
 T_LIST=(1)
 # T_LIST=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 20 24 28 32 40 48 56 64)
 # T_LIST=(16 20 24 28 32 40 48 56 64)
 CACHE=0
 MEM_L=20 # non-zero to enable
 
-USE_ENGINE=1 # whether use search engine
-USE_CACHE=1
-IO_T=1
+#####################
+#   Disk Sep Impl   #
+#####################
+DISK_SEP_IMPL=1
+
+##################
+#   Disk Cache   #
+##################
+DISK_CACHE_IMPL=0
+USE_CACHE=0
+IO_T=0
 # the scale of disk cache size. 1 means 1x scale (2x space as original layout)
 CACHE_SCALE=0.5
 
@@ -72,12 +80,7 @@ PS_USE_RATIO=0.3
 PQ_FILTER_RATIO=1.25
 
 # KNN
-# LS="18 21 24"
-# LS="50 50 50"
-# LS="20 30 40 50 60"
-LS="20 39 40 41"
-# LS="15 20 25 30 40 50 60 70 80 90 100 120"
-# LS="15 20 25 30 35 37 40 42 45 47 50 55 60 70 80 90 100"
+LS="40"
 
 # Range search
 RS_LS="80"

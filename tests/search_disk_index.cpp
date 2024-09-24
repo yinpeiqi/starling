@@ -34,8 +34,10 @@
 #endif
 
 // use engine
-#include "index_engine.h"
+#include "thread_pool.h"
 #include "file_io_manager.h"
+#include "index_engine.h"
+#include "sep_disk_index.h"
 
 namespace po = boost::program_options;
 
@@ -69,6 +71,7 @@ int search_disk_index(
     const float pq_ratio=1.25,
     const bool use_reorder_data = false,
     const bool use_sq = false,
+    const bool disk_separation = false,
     const bool disk_cache_pipeline = false,
     const _u32 io_threads = 1,
     const bool use_cache = true,
@@ -118,12 +121,19 @@ int search_disk_index(
   std::shared_ptr<FileIOManager> fio_reader = nullptr;
   std::shared_ptr<diskann::IndexEngine<T>> _index_engine;
 
+  // use disk separation
+  std::shared_ptr<diskann::SepDiskIndex<T>> _sep_index;
+
   int res;
   if (disk_cache_pipeline) {
     fio_reader.reset(new FileIOManager());
     _index_engine = std::make_shared<diskann::IndexEngine<T>>(fio_reader, metric);
     res = _index_engine->load(num_threads, index_path_prefix.c_str(), disk_file_path);
     res += _index_engine->init_disk_cache(io_threads, use_cache, cache_scale, index_path_prefix.c_str());
+  } else if (disk_separation) {
+    fio_reader.reset(new FileIOManager());
+    _sep_index = std::make_shared<diskann::SepDiskIndex<T>>(fio_reader, metric);
+    res = _sep_index->load(num_threads, index_path_prefix.c_str(), disk_file_path);
   } else {
     reader.reset(new LinuxAlignedFileReader());
     _pFlashIndex = std::make_shared<diskann::PQFlashIndex<T>>(reader, use_page_search, metric, use_sq);
@@ -140,6 +150,10 @@ int search_disk_index(
       _index_engine->load_mem_index(metric, query_dim, mem_index_path, num_threads, mem_L);
     }
     // TODO: disk cache engine don't support node cache now.
+  } else if (disk_separation) {
+    if (mem_L) {
+      _sep_index->load_mem_index(metric, query_dim, mem_index_path, num_threads, mem_L);
+    }
   } else {
     if (mem_L) {
       _pFlashIndex->load_mem_index(metric, query_dim, mem_index_path, num_threads, mem_L);
@@ -233,6 +247,11 @@ int search_disk_index(
         query, query_num, query_aligned_dim, recall_at, mem_L, L, 
         query_result_ids_64, query_result_dists[test_id],
         optimized_beamwidth, search_io_limit, use_reorder_data, pq_ratio, stats);
+    } else if (disk_separation) {
+      _sep_index->page_search(
+        query, query_num, query_aligned_dim, recall_at, mem_L, L, 
+        query_result_ids_64, query_result_dists[test_id],
+        optimized_beamwidth, search_io_limit, use_reorder_data, pq_ratio, stats);
     } else {
       if (use_page_search) {
         if (use_sq) {
@@ -298,6 +317,8 @@ int search_disk_index(
     double io_wastes = 0;
     if (disk_cache_pipeline) {
       io_wastes = mean_ios * _index_engine->get_nnodes_per_sector() - mean_ext_cmps;
+    } else if (disk_separation) {
+      io_wastes = mean_ios * _sep_index->get_nnodes_per_sector() - mean_ext_cmps;
     } else {
       io_wastes = mean_ios * _pFlashIndex->get_nnodes_per_sector() - mean_ext_cmps;
     }
@@ -433,6 +454,7 @@ int main(int argc, char** argv) {
   unsigned io_threads = 0;
   bool use_cache = false;
   bool disk_cache_pipeline = false;
+  bool disk_separation = false;
 
   po::options_description desc{"Arguments"};
   try {
@@ -494,6 +516,8 @@ int main(int argc, char** argv) {
                        "The prefix path of the mem_index");
     desc.add_options()("disk_cache_pipeline", po::value<bool>(&disk_cache_pipeline)->default_value(0),
                        "whether use disk cache");
+    desc.add_options()("disk_separation", po::value<bool>(&disk_separation)->default_value(0),
+                       "whether use disk separation");
     desc.add_options()("pq_ratio", po::value<float>(&pq_ratio)->default_value(1.0f),
                        "The percentage of how many vectors in a page to search each time");
     desc.add_options()("use_cache", po::value<bool>(&use_cache)->default_value(1),
@@ -558,8 +582,8 @@ int main(int argc, char** argv) {
     std::cout << "Currently not support diskann + sq" << std::endl;
     return -1;
   }
-  if (!use_page_search && disk_cache_pipeline) {
-    std::cout << "disk_cache_pipeline not support diskann." << std::endl;
+  if (!use_page_search && (disk_cache_pipeline || disk_separation)) {
+    std::cout << "disk_cache_pipeline/disk_separation not support diskann." << std::endl;
     return -1;
   }
 
@@ -568,19 +592,19 @@ int main(int argc, char** argv) {
       return search_disk_index<float>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq,
+          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq, disk_separation,
           disk_cache_pipeline, io_threads, use_cache, cache_scale);
     else if (data_type == std::string("int8"))
       return search_disk_index<int8_t>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq,
+          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq, disk_separation,
           disk_cache_pipeline, io_threads, use_cache, cache_scale);
     else if (data_type == std::string("uint8"))
       return search_disk_index<uint8_t>(
           metric, index_path_prefix, mem_index_path, result_path_prefix, query_file, gt_file,
           disk_file_path, num_threads, K, W, num_nodes_to_cache, search_io_limit, Lvec, mem_L,
-          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq,
+          use_page_search, use_ratio, pq_ratio, use_reorder_data, use_sq, disk_separation,
           disk_cache_pipeline, io_threads, use_cache, cache_scale);
     else {
       std::cerr << "Unsupported data type. Use float or int8 or uint8"

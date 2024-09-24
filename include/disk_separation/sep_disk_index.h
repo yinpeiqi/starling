@@ -36,12 +36,12 @@
 
 namespace diskann {
   template<typename T>
-  class IndexEngine {
+  class SepDiskIndex {
    public:
-    DISKANN_DLLEXPORT IndexEngine(
+    DISKANN_DLLEXPORT SepDiskIndex(
         std::shared_ptr<FileIOManager> &fio_manager,
         diskann::Metric                     metric = diskann::Metric::L2);
-    DISKANN_DLLEXPORT ~IndexEngine();
+    DISKANN_DLLEXPORT ~SepDiskIndex();
 
     // load id to page id and graph partition layout
     DISKANN_DLLEXPORT void load_partition_data(const std::string &index_prefix,
@@ -55,9 +55,6 @@ namespace diskann {
     DISKANN_DLLEXPORT int load(uint32_t num_threads, const char *index_prefix,
         const std::string& disk_index_path);
 #endif
-
-    // load cache data
-    DISKANN_DLLEXPORT int init_disk_cache(uint32_t io_threads, bool use_cache, const float cache_scale, const std::string &index_prefix);
 
     DISKANN_DLLEXPORT void load_mem_index(Metric metric, const size_t query_dim,
         const std::string &mem_index_path, const _u32 num_threads,
@@ -73,15 +70,10 @@ namespace diskann {
 
     DISKANN_DLLEXPORT unsigned get_nnodes_per_sector() { return nnodes_per_sector; }
 
-    void load_disk_cache_data(const std::string &index_prefix);
-    void write_disk_cache_layout(const std::string &index_prefix);
-
    protected:
     DISKANN_DLLEXPORT void use_medoids_data_as_centroids();
     DISKANN_DLLEXPORT void setup_thread_data(_u64 nthreads);
     DISKANN_DLLEXPORT void destroy_thread_data();
-    DISKANN_DLLEXPORT void start_io_threads();
-    DISKANN_DLLEXPORT void stop_io_threads();
 
    private:
     // index info
@@ -153,11 +145,9 @@ namespace diskann {
 
     // thread-specific scratch
     std::vector<IOContext> ctxs;
-    std::vector<IOContext> w_ctxs;  //write contexts
     std::vector<DataScratch<T>> scratchs;
     // thread pool
     std::shared_ptr<ThreadPool> pool;
-    std::shared_ptr<ThreadPool> io_pool;
 
     _u64                           max_nthreads;
     _u64                           n_io_nthreads;
@@ -172,29 +162,8 @@ namespace diskann {
     std::vector<unsigned> id2page_;
     std::vector<std::vector<unsigned>> gp_layout_;
 
-    // disk cache
-    bool use_cache;
+    // file id.
     int disk_fid;
-    int cache_fid;
-    std::mutex cache_upt_lock;  // only one thread can update layout at a time
-    tsl::robin_map<_u32, _u32> id2cache_page_;
-    std::vector<_u32> cache_page2id_;  // use for check consistency.
-    std::vector<std::vector<unsigned>> cache_layout_;
-    std::mutex freq_upt_lock;  // only one thread can update freq at a time
-    std::shared_ptr<FreqWindowList> freq_;
-    // each should be [MAX_N_SECTOR_WRITES * SECTOR_LEN]
-    std::vector<char*> disk_write_buffer;
-
-    // disk cache page management
-    std::atomic<unsigned> cur_page_id;
-    _u32 tot_cache_page;
-    float cache_scale;
-    // also need to write to ssd when system terminal
-    tbb::concurrent_queue<_u32> free_page_queue_;
-
-    // IO thread pool
-    tbb::concurrent_queue<std::vector<std::shared_ptr<FrontierNode>>> path_queue_;
-    std::atomic_bool io_stop_;
 
 #ifdef EXEC_ENV_OLS
     // Set to a larger value than the actual header to accommodate

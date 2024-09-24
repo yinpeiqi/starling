@@ -267,7 +267,8 @@ case $2 in
               --pq_ratio ${PQ_FILTER_RATIO} \
               --disk_file_path ${DISK_FILE_PATH} \
               --use_sq ${USE_SQ} \
-              --disk_cache_pipeline ${USE_ENGINE} \
+              --disk_separation ${DISK_SEP_IMPL} \
+              --disk_cache_pipeline ${DISK_CACHE_IMPL} \
               --io_T ${IO_T} \
               --cache_scale ${CACHE_SCALE} \
               --use_cache ${USE_CACHE}       > ${SEARCH_LOG}" 
@@ -300,7 +301,8 @@ case $2 in
               --pq_ratio ${PQ_FILTER_RATIO} \
               --disk_file_path ${DISK_FILE_PATH} \
               --use_sq ${USE_SQ} \
-              --disk_cache_pipeline ${USE_ENGINE} \
+              --disk_separation ${DISK_SEP_IMPL} \
+              --disk_cache_pipeline ${DISK_CACHE_IMPL} \
               --io_T ${IO_T} \
               --cache_scale ${CACHE_SCALE} \
               --use_cache ${USE_CACHE}       > ${SEARCH_LOG}
