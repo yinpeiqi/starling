@@ -165,6 +165,22 @@ namespace diskann {
     // file id.
     int disk_fid;
 
+    // TODO:
+    // Currently, the data format are arrange as [node embedding, node nbrs], as a block.
+    // To separate node embedding and node nbrs, the data in disk should be arrange as:
+    // Graph data:
+    //   each block: [num node in block (int), node ids in this block (list), 
+    //                num nbs for node-0 (int), node-0's neighbors (list), 
+    //                num nbs for node-1 (int), node-1's neighbors (list), 
+    //                 ... ... until node n].
+    //   maintain a mapping, node id to page id, same as id2page_.
+    // Emb data:
+    //   each block: [num node in block (int), node ids in this block (list), 
+    //                node-0's embedding (list), 
+    //                node-1's embedding (list), 
+    //                 ... ... until node n].
+    //   also maintain a mapping, map node id to page id.
+
 #ifdef EXEC_ENV_OLS
     // Set to a larger value than the actual header to accommodate
     // any additions we make to the header. This is an outer limit
